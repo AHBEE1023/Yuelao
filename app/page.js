@@ -12,6 +12,7 @@ const ERRORS = {
   bad_input: '信息没填对,检查一下~',
   bad_device: '设备信息异常,刷新页面再试试',
   not_drawn: '只能举报你抽到过的纸条哦',
+  not_owner: '只能撤回自己的纸条哦',
   network: '网络开小差了,稍后再试~',
 }
 
@@ -19,10 +20,20 @@ function errMsg(code) {
   return ERRORS[code] || ERRORS.network
 }
 
+const EMPTY_STATS = {
+  male: 0,
+  female: 0,
+  total_draws: 0,
+  draws_left: 5,
+  puts_left: 3,
+  my_notes: [],
+}
+
 export default function Home() {
   const [tab, setTab] = useState('draw')
   const [deviceId, setDeviceId] = useState(null)
-  const [stats, setStats] = useState({ male: 0, female: 0, total_draws: 0, my_notes: [] })
+  const [stats, setStats] = useState(EMPTY_STATS)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     setDeviceId(getDeviceId())
@@ -30,7 +41,8 @@ export default function Home() {
 
   async function refreshStats(id = deviceId) {
     const { data, error } = await supabase.rpc('yuelao_stats', { p_device_id: id })
-    if (!error && data) setStats(data)
+    if (!error && data) setStats({ ...EMPTY_STATS, ...data })
+    setLoaded(true)
   }
 
   useEffect(() => {
@@ -59,33 +71,42 @@ export default function Home() {
       </nav>
 
       {tab === 'draw' && (
-        <DrawTab deviceId={deviceId} stats={stats} onDone={refreshStats} />
+        <DrawTab deviceId={deviceId} stats={stats} loaded={loaded} onDone={refreshStats} />
       )}
       {tab === 'put' && (
-        <PutTab deviceId={deviceId} onDone={refreshStats} goDraw={() => setTab('draw')} />
+        <PutTab deviceId={deviceId} stats={stats} onDone={refreshStats} goDraw={() => setTab('draw')} />
       )}
-      {tab === 'mine' && <MineTab notes={stats.my_notes} />}
+      {tab === 'mine' && (
+        <MineTab notes={stats.my_notes} deviceId={deviceId} loaded={loaded} onDone={refreshStats} />
+      )}
 
       <footer className="disclaimer">
         月老只负责牵线,不核实身份。
         <br />
         请勿轻信转账、投资、刷单等要求,谨防诈骗。
         <br />
-        累计 {stats.total_draws} 次缘分被抽走
+        已牵起 {stats.total_draws} 段缘分
       </footer>
     </main>
   )
 }
 
-function DrawTab({ deviceId, stats, onDone }) {
+function DrawTab({ deviceId, stats, loaded, onDone }) {
   const [shaking, setShaking] = useState(null) // 'male' | 'female'
   const [note, setNote] = useState(null)
   const [toast, setToast] = useState('')
   const [copied, setCopied] = useState(false)
+  const [reporting, setReporting] = useState(false)
   const [reported, setReported] = useState(false)
+
+  const outOfDraws = loaded && stats.draws_left <= 0
 
   async function draw(gender) {
     if (!deviceId || shaking) return
+    if (outOfDraws) {
+      setToast(errMsg('daily_limit'))
+      return
+    }
     setToast('')
     setShaking(gender)
     const started = Date.now()
@@ -103,6 +124,7 @@ function DrawTab({ deviceId, stats, onDone }) {
         setToast(errMsg(data.error))
       } else {
         setCopied(false)
+        setReporting(false)
         setReported(false)
         setNote(data.note)
         onDone()
@@ -119,14 +141,16 @@ function DrawTab({ deviceId, stats, onDone }) {
     }
   }
 
-  async function report() {
-    if (reported) return
+  async function report(reason) {
     const { data } = await supabase.rpc('yuelao_report_note', {
       p_device_id: deviceId,
       p_note_id: note.id,
-      p_reason: 'user_report',
+      p_reason: reason,
     })
-    if (data?.ok) setReported(true)
+    if (data?.ok) {
+      setReported(true)
+      setReporting(false)
+    }
   }
 
   return (
@@ -135,27 +159,35 @@ function DrawTab({ deviceId, stats, onDone }) {
         <button
           className={`box ${shaking === 'male' ? 'shaking' : ''}`}
           onClick={() => draw('male')}
+          disabled={outOfDraws}
         >
           <span className="emoji">💙</span>
           <h3>男生盒</h3>
-          <div className="count">{stats.male} 张纸条在等待</div>
+          <div className="count">{loaded ? `${stats.male} 张纸条在等待` : '清点中…'}</div>
         </button>
         <button
           className={`box ${shaking === 'female' ? 'shaking' : ''}`}
           onClick={() => draw('female')}
+          disabled={outOfDraws}
         >
           <span className="emoji">❤️</span>
           <h3>女生盒</h3>
-          <div className="count">{stats.female} 张纸条在等待</div>
+          <div className="count">{loaded ? `${stats.female} 张纸条在等待` : '清点中…'}</div>
         </button>
       </div>
 
       {toast && <div className="toast">{toast}</div>}
 
       <p className="hint">
-        点一下盒子,月老为你抽一张纸条
-        <br />
-        每天最多抽 5 次 · 不会抽到重复的人
+        {outOfDraws ? (
+          <>今天的缘分抽完啦,明天再来~</>
+        ) : (
+          <>
+            点一下盒子,月老为你抽一张纸条
+            <br />
+            今日还可抽 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会抽到重复的人
+          </>
+        )}
       </p>
 
       {note && (
@@ -186,14 +218,35 @@ function DrawTab({ deviceId, stats, onDone }) {
               </button>
             </div>
             <p className="safety">⚠️ 添加好友后注意保护隐私,涉及金钱一律是骗子。</p>
-            <div className="card-actions">
-              <button className="btn btn-plain" onClick={report} disabled={reported}>
-                {reported ? '已举报' : '举报此纸条'}
-              </button>
-              <button className="btn btn-red" onClick={() => setNote(null)}>
-                收下这段缘分
-              </button>
-            </div>
+
+            {reporting ? (
+              <div className="report-box">
+                <span className="report-title">这张纸条哪里不对?</span>
+                <div className="report-reasons">
+                  {['广告推广', '虚假信息', '骚扰不适', '其他'].map((r) => (
+                    <button key={r} className="btn btn-plain reason" onClick={() => report(r)}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <button className="btn btn-plain" onClick={() => setReporting(false)}>
+                  取消
+                </button>
+              </div>
+            ) : (
+              <div className="card-actions">
+                <button
+                  className="btn btn-plain"
+                  onClick={() => setReporting(true)}
+                  disabled={reported}
+                >
+                  {reported ? '已举报,谢谢' : '举报此纸条'}
+                </button>
+                <button className="btn btn-red" onClick={() => setNote(null)}>
+                  收下这段缘分
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -212,7 +265,7 @@ const EMPTY_FORM = {
   message: '',
 }
 
-function PutTab({ deviceId, onDone, goDraw }) {
+function PutTab({ deviceId, stats, onDone, goDraw }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -279,7 +332,7 @@ function PutTab({ deviceId, onDone, goDraw }) {
   return (
     <form className="form-card" onSubmit={submit}>
       <h2>把自己放进盲盒 💌</h2>
-      <p className="sub">每天最多存 3 张 · 联系方式只有抽中的人能看到</p>
+      <p className="sub">今日还可存 {stats.puts_left} 张 · 联系方式只有抽中的人能看到</p>
 
       <div className="row2">
         <div className="fgroup">
@@ -345,7 +398,24 @@ function PutTab({ deviceId, onDone, goDraw }) {
   )
 }
 
-function MineTab({ notes }) {
+function MineTab({ notes, deviceId, loaded, onDone }) {
+  const [busyId, setBusyId] = useState(null)
+  const [confirmId, setConfirmId] = useState(null)
+
+  async function withdraw(id) {
+    setBusyId(id)
+    const { data } = await supabase.rpc('yuelao_withdraw_note', {
+      p_device_id: deviceId,
+      p_note_id: id,
+    })
+    setBusyId(null)
+    setConfirmId(null)
+    if (data?.ok) onDone()
+  }
+
+  if (!loaded) {
+    return <div className="empty">正在翻看你的纸条…</div>
+  }
   if (!notes || notes.length === 0) {
     return (
       <div className="empty">
@@ -359,21 +429,41 @@ function MineTab({ notes }) {
     <section>
       {notes.map((n) => (
         <div className="mine-item" key={n.id}>
-          <div>
+          <div className="mine-main">
             <div className="name">
               {n.nickname}
-              <span style={{ fontWeight: 400, fontSize: 12, marginLeft: 8, color: '#9c7f6e' }}>
-                {n.gender === 'male' ? '男生盒' : '女生盒'}
-              </span>
+              <span className="tag">{n.gender === 'male' ? '男生盒' : '女生盒'}</span>
             </div>
             <div className="sub">
               {new Date(n.created_at).toLocaleDateString('zh-CN')} 放入
               {n.status === 'hidden' ? ' · 已因举报下架' : ''}
             </div>
           </div>
-          <div className="badge">被抽走 {n.draw_count} 次</div>
+          <div className="mine-right">
+            <div className="badge">被抽走 {n.draw_count} 次</div>
+            {n.status === 'active' &&
+              (confirmId === n.id ? (
+                <div className="confirm-row">
+                  <button
+                    className="btn-tiny danger"
+                    onClick={() => withdraw(n.id)}
+                    disabled={busyId === n.id}
+                  >
+                    {busyId === n.id ? '撤回中' : '确认撤回'}
+                  </button>
+                  <button className="btn-tiny" onClick={() => setConfirmId(null)}>
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <button className="btn-tiny" onClick={() => setConfirmId(n.id)}>
+                  撤回
+                </button>
+              ))}
+          </div>
         </div>
       ))}
+      <p className="mine-note">撤回后纸条不再出现在盒子里,当日存放次数不会返还。</p>
     </section>
   )
 }
