@@ -1,0 +1,432 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --red: #c0392b;
+  --red-deep: #96281b;
+  --gold: #f0c75e;
+  --paper: #fffaf0;
+  --ink: #3d2b24;
+  --muted: #9c7f6e;
+}
+
+body {
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(240, 199, 94, 0.18), transparent 40%),
+    radial-gradient(circle at 85% 75%, rgba(240, 199, 94, 0.12), transparent 45%),
+    linear-gradient(160deg, #a93226 0%, #8e2418 55%, #7b1d12 100%);
+  min-height: 100vh;
+  color: var(--ink);
+}
+
+.wrap {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px 18px 60px;
+}
+
+.hero {
+  text-align: center;
+  color: var(--paper);
+  margin-bottom: 22px;
+}
+
+.hero .knot {
+  font-size: 44px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.hero h1 {
+  font-size: 34px;
+  letter-spacing: 6px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.hero p {
+  margin-top: 8px;
+  font-size: 14px;
+  color: rgba(255, 250, 240, 0.85);
+  letter-spacing: 1px;
+}
+
+.tabs {
+  display: flex;
+  background: rgba(255, 250, 240, 0.14);
+  border-radius: 14px;
+  padding: 5px;
+  margin-bottom: 20px;
+}
+
+.tabs button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: rgba(255, 250, 240, 0.85);
+  font-size: 15px;
+  padding: 10px 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tabs button.active {
+  background: var(--paper);
+  color: var(--red-deep);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.boxes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.box {
+  border: none;
+  border-radius: 18px;
+  padding: 26px 12px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: linear-gradient(170deg, #fffdf7, #fdf3dd);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+  font-family: inherit;
+}
+
+.box:active {
+  transform: scale(0.96);
+}
+
+.box.shaking {
+  animation: shake 0.5s ease-in-out infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-4deg) translateY(-2px); }
+  75% { transform: rotate(4deg) translateY(-2px); }
+}
+
+.box .emoji {
+  font-size: 46px;
+  display: block;
+}
+
+.box h3 {
+  margin-top: 10px;
+  font-size: 18px;
+  color: var(--red-deep);
+  letter-spacing: 2px;
+}
+
+.box .count {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.hint {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 250, 240, 0.75);
+  line-height: 1.8;
+}
+
+.toast {
+  margin-top: 14px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #ffe9b8;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* 抽中的纸条卡片 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(40, 10, 5, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.note-card {
+  background: var(--paper);
+  width: 100%;
+  max-width: 380px;
+  border-radius: 16px;
+  padding: 26px 24px 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 27px,
+    rgba(192, 57, 43, 0.12) 28px
+  );
+}
+
+@keyframes pop {
+  from { transform: scale(0.6) rotate(-4deg); opacity: 0; }
+  to { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+.note-card .top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.note-card h2 {
+  font-size: 24px;
+  color: var(--red-deep);
+}
+
+.note-card .meta {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.note-card .field {
+  margin-top: 12px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.note-card .field b {
+  color: var(--red);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.contact-row {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fdeede;
+  border: 1px dashed var(--red);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.contact-row .cid {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--red-deep);
+  word-break: break-all;
+}
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-red {
+  background: var(--red);
+  color: #fff;
+}
+
+.btn-plain {
+  background: transparent;
+  color: var(--muted);
+}
+
+.card-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.safety {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* 存纸条表单 */
+.form-card {
+  background: var(--paper);
+  border-radius: 18px;
+  padding: 22px 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.form-card h2 {
+  font-size: 18px;
+  color: var(--red-deep);
+  margin-bottom: 4px;
+}
+
+.form-card .sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.fgroup {
+  margin-bottom: 12px;
+}
+
+.fgroup label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.fgroup input,
+.fgroup textarea {
+  width: 100%;
+  border: 1px solid #e8d5c4;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+}
+
+.fgroup input:focus,
+.fgroup textarea:focus {
+  outline: 2px solid rgba(192, 57, 43, 0.35);
+}
+
+.seg {
+  display: flex;
+  gap: 8px;
+}
+
+.seg button {
+  flex: 1;
+  border: 1px solid #e8d5c4;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 0;
+  font-size: 15px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+}
+
+.seg button.on {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  font-weight: 600;
+}
+
+.submit-btn {
+  width: 100%;
+  margin-top: 6px;
+  background: linear-gradient(135deg, #d35445, var(--red-deep));
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  padding: 13px 0;
+  border-radius: 12px;
+}
+
+.err {
+  margin-top: 10px;
+  color: var(--red);
+  font-size: 14px;
+  text-align: center;
+}
+
+.ok-panel {
+  text-align: center;
+  padding: 30px 10px;
+}
+
+.ok-panel .emoji {
+  font-size: 52px;
+}
+
+.ok-panel h2 {
+  margin-top: 12px;
+  color: var(--red-deep);
+}
+
+.ok-panel p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* 我的纸条 */
+.mine-item {
+  background: var(--paper);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.mine-item .name {
+  font-weight: 600;
+  color: var(--red-deep);
+}
+
+.mine-item .sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.mine-item .badge {
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.empty {
+  text-align: center;
+  color: rgba(255, 250, 240, 0.8);
+  font-size: 14px;
+  padding: 40px 0;
+  line-height: 1.8;
+}
+
+footer.disclaimer {
+  margin-top: 34px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 250, 240, 0.55);
+  line-height: 1.8;
+}
