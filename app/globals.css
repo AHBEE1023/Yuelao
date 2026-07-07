@@ -103,6 +103,15 @@ body {
   transform: scale(0.96);
 }
 
+.box:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.box:disabled:active {
+  transform: none;
+}
+
 .box.shaking {
   animation: shake 0.5s ease-in-out infinite;
 }
@@ -385,6 +394,38 @@ body {
   line-height: 1.7;
 }
 
+/* 举报理由 */
+.report-box {
+  margin-top: 14px;
+  border-top: 1px solid #efe0cf;
+  padding-top: 12px;
+}
+
+.report-title {
+  display: block;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+
+.report-reasons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.btn.reason {
+  border: 1px solid #e8d5c4;
+  border-radius: 10px;
+  color: var(--ink);
+  padding: 9px 0;
+}
+
+.btn.reason:active {
+  background: #fdeede;
+}
+
 /* 我的纸条 */
 .mine-item {
   background: var(--paper);
@@ -394,12 +435,24 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.mine-main {
+  min-width: 0;
 }
 
 .mine-item .name {
   font-weight: 600;
   color: var(--red-deep);
+}
+
+.mine-item .tag {
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 8px;
+  color: var(--muted);
 }
 
 .mine-item .sub {
@@ -408,11 +461,53 @@ body {
   margin-top: 3px;
 }
 
+.mine-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .mine-item .badge {
   font-size: 13px;
   color: var(--red);
   font-weight: 600;
   white-space: nowrap;
+}
+
+.btn-tiny {
+  border: 1px solid #e8d5c4;
+  background: #fff;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-tiny.danger {
+  border-color: var(--red);
+  color: #fff;
+  background: var(--red);
+}
+
+.btn-tiny:disabled {
+  opacity: 0.55;
+}
+
+.confirm-row {
+  display: flex;
+  gap: 6px;
+}
+
+.mine-note {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 250, 240, 0.7);
+  margin-top: 6px;
+  line-height: 1.7;
 }
 
 .empty {
