@@ -26,7 +26,8 @@ body {
 .wrap {
   max-width: 520px;
   margin: 0 auto;
-  padding: 28px 18px 60px;
+  padding: calc(28px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
+    calc(60px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
 }
 
 .hero {
