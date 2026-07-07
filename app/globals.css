@@ -81,6 +81,35 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+.city-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: rgba(255, 250, 240, 0.9);
+  font-size: 14px;
+}
+
+.city-filter select {
+  flex: 1;
+  background: rgba(255, 250, 240, 0.16);
+  color: var(--paper);
+  border: 1px solid rgba(255, 250, 240, 0.3);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23fff5e0' stroke-width='1.6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.city-filter select option {
+  color: var(--ink);
+}
+
 .boxes {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -518,8 +547,36 @@ body {
   line-height: 1.8;
 }
 
+.share-wrap {
+  margin-top: 26px;
+  text-align: center;
+}
+
+.share-btn {
+  border: 1px solid rgba(255, 250, 240, 0.4);
+  background: rgba(255, 250, 240, 0.14);
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 11px 22px;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.share-btn:active {
+  background: rgba(255, 250, 240, 0.26);
+}
+
+.share-hint {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #ffe9b8;
+  word-break: break-all;
+}
+
 footer.disclaimer {
-  margin-top: 34px;
+  margin-top: 22px;
   text-align: center;
   font-size: 12px;
   color: rgba(255, 250, 240, 0.55);

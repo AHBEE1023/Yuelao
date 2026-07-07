@@ -13,6 +13,7 @@ const ERRORS = {
   bad_device: '设备信息异常,刷新页面再试试',
   not_drawn: '只能举报你抽到过的纸条哦',
   not_owner: '只能撤回自己的纸条哦',
+  city_empty: '这座城市暂时还没有纸条,换个城市,或先存一张吧~',
   network: '网络开小差了,稍后再试~',
 }
 
@@ -26,6 +27,8 @@ const EMPTY_STATS = {
   total_draws: 0,
   draws_left: 5,
   puts_left: 3,
+  male_cities: [],
+  female_cities: [],
   my_notes: [],
 }
 
@@ -80,6 +83,8 @@ export default function Home() {
         <MineTab notes={stats.my_notes} deviceId={deviceId} loaded={loaded} onDone={refreshStats} />
       )}
 
+      <ShareButton />
+
       <footer className="disclaimer">
         月老只负责牵线,不核实身份。
         <br />
@@ -91,6 +96,46 @@ export default function Home() {
   )
 }
 
+function ShareButton() {
+  const [hint, setHint] = useState('')
+
+  async function share() {
+    const url = typeof window !== 'undefined' ? window.location.origin : ''
+    const data = {
+      title: '月老盲盒',
+      text: '存一张纸条,抽一段缘分 🪢 快来月老盲盒碰碰运气~',
+      url,
+    }
+    // 优先用系统分享面板(手机端可直接分享到微信等)
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share(data)
+        return
+      } catch {
+        // 用户取消分享,静默处理
+        return
+      }
+    }
+    // 降级:复制链接
+    try {
+      await navigator.clipboard.writeText(url)
+      setHint('链接已复制,发给朋友吧!')
+      setTimeout(() => setHint(''), 2500)
+    } catch {
+      setHint(url)
+    }
+  }
+
+  return (
+    <div className="share-wrap">
+      <button className="share-btn" onClick={share}>
+        🧧 把盲盒分享给朋友
+      </button>
+      {hint && <div className="share-hint">{hint}</div>}
+    </div>
+  )
+}
+
 function DrawTab({ deviceId, stats, loaded, onDone }) {
   const [shaking, setShaking] = useState(null) // 'male' | 'female'
   const [note, setNote] = useState(null)
@@ -98,8 +143,17 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
   const [copied, setCopied] = useState(false)
   const [reporting, setReporting] = useState(false)
   const [reported, setReported] = useState(false)
+  const [city, setCity] = useState('')
 
   const outOfDraws = loaded && stats.draws_left <= 0
+
+  // 两个盒子里出现过的城市并集,供筛选下拉;保持出现顺序(按数量已在后端排序)
+  const cities = []
+  for (const c of [...(stats.male_cities || []), ...(stats.female_cities || [])]) {
+    if (c && !cities.includes(c)) cities.push(c)
+  }
+  // 选中的城市若因数据变化已不存在,回退到"全部"
+  const activeCity = cities.includes(city) ? city : ''
 
   async function draw(gender) {
     if (!deviceId || shaking) return
@@ -113,6 +167,7 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
     const { data, error } = await supabase.rpc('yuelao_draw_note', {
       p_device_id: deviceId,
       p_gender: gender,
+      p_city: activeCity || null,
     })
     // 让盒子至少摇 0.8 秒,有开盲盒的仪式感
     const wait = Math.max(0, 800 - (Date.now() - started))
@@ -155,6 +210,19 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
 
   return (
     <section>
+      {cities.length > 0 && (
+        <div className="city-filter">
+          <span>抽取范围</span>
+          <select value={activeCity} onChange={(e) => setCity(e.target.value)}>
+            <option value="">全部城市</option>
+            {cities.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="boxes">
         <button
           className={`box ${shaking === 'male' ? 'shaking' : ''}`}
@@ -183,7 +251,8 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
           <>今天的缘分抽完啦,明天再来~</>
         ) : (
           <>
-            点一下盒子,月老为你抽一张纸条
+            点一下盒子,月老为你抽一张
+            {activeCity ? <b> {activeCity} </b> : '的'}纸条
             <br />
             今日还可抽 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会抽到重复的人
           </>
