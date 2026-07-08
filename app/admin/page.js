@@ -1,0 +1,283 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+import './admin.css'
+
+const FILTERS = [
+  { key: 'reported', label: '待处理举报' },
+  { key: 'hidden', label: '已下架' },
+  { key: 'active', label: '在架' },
+  { key: 'all', label: '全部' },
+]
+
+const GENDER = { male: '男', female: '女' }
+
+export default function AdminPage() {
+  const [pw, setPw] = useState(null) // 已登录的密码
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('yuelao_admin_pw') : null
+    if (saved) setPw(saved)
+    setReady(true)
+    // 后台用浅色背景,覆盖前台喜庆红底
+    document.body.classList.add('admin-mode')
+    return () => document.body.classList.remove('admin-mode')
+  }, [])
+
+  function onLogin(p) {
+    localStorage.setItem('yuelao_admin_pw', p)
+    setPw(p)
+  }
+  function logout() {
+    localStorage.removeItem('yuelao_admin_pw')
+    setPw(null)
+  }
+
+  if (!ready) return null
+  if (!pw) return <Login onLogin={onLogin} />
+  return <Dashboard pw={pw} logout={logout} onInvalid={logout} />
+}
+
+function Login({ onLogin }) {
+  const [val, setVal] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setErr('')
+    const { data, error } = await supabase.rpc('yuelao_admin_login', { p_password: val })
+    setBusy(false)
+    if (error) return setErr('网络错误,稍后再试')
+    if (data?.ok) onLogin(val)
+    else setErr('密码不正确')
+  }
+
+  return (
+    <main className="admin-wrap">
+      <form className="admin-card login" onSubmit={submit}>
+        <h1>🪢 月老盲盒 · 后台</h1>
+        <p className="sub">请输入管理密码</p>
+        <input
+          type="password"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder="管理密码"
+          autoFocus
+        />
+        <button className="admin-btn primary" disabled={busy}>
+          {busy ? '验证中…' : '登录'}
+        </button>
+        {err && <p className="admin-err">{err}</p>}
+      </form>
+    </main>
+  )
+}
+
+function Dashboard({ pw, logout, onInvalid }) {
+  const [overview, setOverview] = useState(null)
+  const [filter, setFilter] = useState('reported')
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState(null)
+  const [showPw, setShowPw] = useState(false)
+
+  async function loadOverview() {
+    const { data } = await supabase.rpc('yuelao_admin_overview', { p_password: pw })
+    if (data && !data.ok && data.error === 'bad_password') return onInvalid()
+    if (data?.ok) setOverview(data)
+  }
+
+  async function loadList(f = filter) {
+    setLoading(true)
+    const { data } = await supabase.rpc('yuelao_admin_list', { p_password: pw, p_filter: f })
+    if (data && !data.ok && data.error === 'bad_password') return onInvalid()
+    setItems(data?.items || [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadOverview()
+    loadList('reported')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function pick(f) {
+    setFilter(f)
+    loadList(f)
+  }
+
+  async function setStatus(id, status) {
+    setBusyId(id)
+    const { data } = await supabase.rpc('yuelao_admin_set_status', {
+      p_password: pw,
+      p_note_id: id,
+      p_status: status,
+    })
+    setBusyId(null)
+    if (data?.ok) {
+      await Promise.all([loadList(), loadOverview()])
+    }
+  }
+
+  const cards = overview
+    ? [
+        { label: '待处理举报', value: overview.reported_pending, hot: overview.reported_pending > 0 },
+        { label: '在架纸条', value: overview.active },
+        { label: '已下架', value: overview.hidden },
+        { label: '今日新增', value: overview.notes_today },
+        { label: '今日抽取', value: overview.draws_today },
+        { label: '累计牵线', value: overview.total_draws },
+      ]
+    : []
+
+  return (
+    <main className="admin-wrap">
+      <div className="admin-top">
+        <h1>🪢 月老盲盒 · 后台</h1>
+        <div className="admin-top-actions">
+          <button className="admin-btn ghost" onClick={() => setShowPw(true)}>
+            改密码
+          </button>
+          <button className="admin-btn ghost" onClick={logout}>
+            退出
+          </button>
+        </div>
+      </div>
+
+      <div className="admin-cards">
+        {cards.map((c) => (
+          <div className={`admin-stat ${c.hot ? 'hot' : ''}`} key={c.label}>
+            <div className="v">{c.value}</div>
+            <div className="l">{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="admin-filters">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={filter === f.key ? 'on' : ''}
+            onClick={() => pick(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+        <button className="admin-refresh" onClick={() => { loadList(); loadOverview() }}>
+          刷新
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="admin-empty">加载中…</p>
+      ) : items.length === 0 ? (
+        <p className="admin-empty">
+          {filter === 'reported' ? '没有待处理的举报 🎉' : '这里空空如也'}
+        </p>
+      ) : (
+        <div className="admin-list">
+          {items.map((n) => (
+            <div className={`admin-note ${n.status}`} key={n.id}>
+              <div className="an-head">
+                <span className="an-name">{n.nickname}</span>
+                <span className="an-meta">
+                  {GENDER[n.gender]} · {n.age} · {n.city}
+                </span>
+                {n.report_count > 0 && <span className="an-flag">举报 {n.report_count}</span>}
+                {n.status === 'hidden' && <span className="an-hidden">已下架</span>}
+              </div>
+              {n.reasons && n.reasons.length > 0 && (
+                <div className="an-reasons">
+                  {n.reasons.map((r, i) => (
+                    <span className="an-reason" key={i}>
+                      {r || '未注明'}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {n.hobbies && <div className="an-line">爱好:{n.hobbies}</div>}
+              {n.message && <div className="an-line">留言:{n.message}</div>}
+              <div className="an-line contact">微信:{n.contact} · 被抽 {n.draw_count} 次</div>
+              <div className="an-actions">
+                {n.status === 'active' ? (
+                  <button
+                    className="admin-btn danger sm"
+                    onClick={() => setStatus(n.id, 'hidden')}
+                    disabled={busyId === n.id}
+                  >
+                    {busyId === n.id ? '处理中' : '下架'}
+                  </button>
+                ) : (
+                  <button
+                    className="admin-btn primary sm"
+                    onClick={() => setStatus(n.id, 'active')}
+                    disabled={busyId === n.id}
+                  >
+                    {busyId === n.id ? '处理中' : '恢复上架'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showPw && <ChangePw pw={pw} onClose={() => setShowPw(false)} onChanged={onInvalid} />}
+    </main>
+  )
+}
+
+function ChangePw({ pw, onClose, onChanged }) {
+  const [np, setNp] = useState('')
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setMsg('')
+    const { data } = await supabase.rpc('yuelao_admin_set_password', {
+      p_password: pw,
+      p_new: np,
+    })
+    setBusy(false)
+    if (data?.ok) {
+      setMsg('已修改,请用新密码重新登录')
+      setTimeout(onChanged, 1200)
+    } else if (data?.error === 'weak_password') {
+      setMsg('新密码至少 8 位')
+    } else {
+      setMsg('修改失败')
+    }
+  }
+
+  return (
+    <div className="admin-overlay" onClick={onClose}>
+      <form className="admin-card" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h2>修改管理密码</h2>
+        <input
+          type="password"
+          value={np}
+          onChange={(e) => setNp(e.target.value)}
+          placeholder="新密码(至少 8 位)"
+          autoFocus
+        />
+        <div className="an-actions" style={{ marginTop: 12 }}>
+          <button type="button" className="admin-btn ghost" onClick={onClose}>
+            取消
+          </button>
+          <button className="admin-btn primary" disabled={busy}>
+            {busy ? '提交中…' : '确认修改'}
+          </button>
+        </div>
+        {msg && <p className="admin-err">{msg}</p>}
+      </form>
+    </div>
+  )
+}

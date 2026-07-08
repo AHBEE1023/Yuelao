@@ -1,0 +1,307 @@
+body.admin-mode {
+  background: #f4f6f9 !important;
+}
+
+.admin-wrap {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: calc(20px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+  color: #1f2733;
+  min-height: 100vh;
+}
+
+.admin-wrap h1 {
+  font-size: 20px;
+  color: #b0341f;
+}
+
+.admin-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-top-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 卡片区 */
+.admin-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.admin-stat {
+  background: #fff;
+  border: 1px solid #eceef2;
+  border-radius: 12px;
+  padding: 14px 12px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(20, 30, 50, 0.05);
+}
+
+.admin-stat.hot {
+  background: #fff4f1;
+  border-color: #f3c4b8;
+}
+
+.admin-stat .v {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2733;
+}
+
+.admin-stat.hot .v {
+  color: #d0341c;
+}
+
+.admin-stat .l {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #7a8494;
+}
+
+/* 筛选 */
+.admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.admin-filters button {
+  border: 1px solid #dfe3ea;
+  background: #fff;
+  color: #4a5567;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.admin-filters button.on {
+  background: #b0341f;
+  border-color: #b0341f;
+  color: #fff;
+}
+
+.admin-refresh {
+  margin-left: auto;
+  color: #7a8494 !important;
+}
+
+/* 纸条列表 */
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-note {
+  background: #fff;
+  border: 1px solid #eceef2;
+  border-left: 3px solid #dfe3ea;
+  border-radius: 12px;
+  padding: 13px 15px;
+  box-shadow: 0 1px 3px rgba(20, 30, 50, 0.05);
+}
+
+.admin-note.hidden {
+  opacity: 0.7;
+  border-left-color: #b6bcc6;
+}
+
+.admin-note:has(.an-flag) {
+  border-left-color: #e0492c;
+}
+
+.an-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.an-name {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.an-meta {
+  font-size: 13px;
+  color: #7a8494;
+}
+
+.an-flag {
+  font-size: 12px;
+  background: #fdece8;
+  color: #d0341c;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+.an-hidden {
+  font-size: 12px;
+  background: #eef0f3;
+  color: #6b7482;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.an-reasons {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.an-reason {
+  font-size: 12px;
+  background: #fff4f1;
+  color: #c0442b;
+  border: 1px solid #f3c4b8;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.an-line {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #3a4453;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.an-line.contact {
+  color: #1f2733;
+  font-weight: 500;
+}
+
+.an-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 按钮 */
+.admin-btn {
+  border: 1px solid #dfe3ea;
+  background: #fff;
+  color: #4a5567;
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+.admin-btn.sm {
+  padding: 7px 16px;
+}
+
+.admin-btn.primary {
+  background: #b0341f;
+  border-color: #b0341f;
+  color: #fff;
+}
+
+.admin-btn.danger {
+  background: #fff;
+  border-color: #e0492c;
+  color: #d0341c;
+}
+
+.admin-btn.ghost {
+  background: transparent;
+  color: #7a8494;
+}
+
+.admin-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-empty {
+  text-align: center;
+  color: #8a93a2;
+  padding: 40px 0;
+  font-size: 15px;
+}
+
+/* 登录 & 弹窗 */
+.admin-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 26px 22px;
+  box-shadow: 0 8px 30px rgba(20, 30, 50, 0.12);
+}
+
+.admin-card.login {
+  max-width: 360px;
+  margin: 16vh auto 0;
+  text-align: center;
+}
+
+.admin-card h2 {
+  font-size: 17px;
+  color: #1f2733;
+  margin-bottom: 14px;
+}
+
+.admin-card .sub {
+  color: #7a8494;
+  font-size: 14px;
+  margin: 6px 0 16px;
+}
+
+.admin-card input {
+  width: 100%;
+  border: 1px solid #dfe3ea;
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-size: 15px;
+  font-family: inherit;
+  color: #1f2733;
+}
+
+.admin-card input:focus {
+  outline: 2px solid rgba(176, 52, 31, 0.3);
+}
+
+.admin-card.login .admin-btn {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.admin-err {
+  margin-top: 10px;
+  color: #d0341c;
+  font-size: 14px;
+  text-align: center;
+}
+
+.admin-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 30, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.admin-overlay .admin-card {
+  width: 100%;
+  max-width: 360px;
+}
