@@ -1,9 +1,14 @@
 import './globals.css'
 import PwaRegister from './pwa-register'
 
+const SITE_URL = 'https://yuelao-sage.vercel.app'
+const TITLE = '月老盲盒 · 一元遇见有缘人'
+const DESC = '存一张纸条,抽一段缘分。线上版月老盲盒:留下你的联系方式,或从盒子里抽出一位有缘人。'
+
 export const metadata = {
-  title: '月老盲盒 · 一元遇见有缘人',
-  description: '存一张纸条,抽一段缘分。线上版月老盲盒:留下你的联系方式,或从盒子里抽出一位有缘人。',
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESC,
   manifest: '/manifest.webmanifest',
   applicationName: '月老盲盒',
   appleWebApp: {
@@ -17,6 +22,21 @@ export const metadata = {
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
     ],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'zh_CN',
+    url: SITE_URL,
+    siteName: '月老盲盒',
+    title: TITLE,
+    description: DESC,
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: '月老盲盒 · 存一张纸条,抽一段缘分' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESC,
+    images: ['/og.png'],
   },
 }
 
