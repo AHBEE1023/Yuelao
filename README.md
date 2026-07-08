@@ -6,6 +6,7 @@
 - 🎁 **抽纸条**:从异性盒子里随机抽一张,抽中才能看到对方联系方式;可**按城市筛选**同城缘分,界面实时显示今日剩余次数
 - 🔗 **分享**:一键调起系统分享面板(手机可直接分享到微信),不支持时自动复制链接
 - 📱 **可安装(PWA)**:支持"添加到主屏幕",像原生 App 一样全屏打开,配月老红线专属图标
+- 🛠️ **运营后台**(`/admin`):密码登录,查看数据概览、审核被举报的纸条、一键下架/恢复、修改密码
 - 📋 **我的纸条**:查看自己存过的纸条被抽走了几次,并可随时**撤回**(撤回后不再进入盒子)
 - 🚩 **举报**:抽到不合适的纸条可按理由(广告 / 虚假 / 骚扰 / 其他)举报,3 个设备举报即自动下架
 
@@ -27,8 +28,15 @@
 | 举报下架 | 只能举报自己抽到过的纸条,3 个不同设备举报即自动隐藏 |
 | 撤回纸条 | 只能撤回自己设备存放的纸条;撤回不返还当日额度,避免刷额度 |
 
-数据库对象全部使用 `yuelao_` 前缀:表 `yuelao_notes` / `yuelao_draws` / `yuelao_reports`,
-函数 `yuelao_submit_note` / `yuelao_draw_note` / `yuelao_report_note` / `yuelao_withdraw_note` / `yuelao_stats`。
+数据库对象全部使用 `yuelao_` 前缀:表 `yuelao_notes` / `yuelao_draws` / `yuelao_reports` / `yuelao_admin`,
+用户函数 `yuelao_submit_note` / `yuelao_draw_note` / `yuelao_report_note` / `yuelao_withdraw_note` / `yuelao_stats`,
+后台函数 `yuelao_admin_login` / `yuelao_admin_overview` / `yuelao_admin_list` / `yuelao_admin_set_status` / `yuelao_admin_set_password`。
+
+## 运营后台
+
+访问 `/admin`,用管理密码登录。密码以 bcrypt 哈希存在 `yuelao_admin` 表(RLS 开启无策略,
+公开 key 读不到哈希);所有后台 RPC 都在数据库端校验密码后才返回数据或执行操作。
+初始密码由部署者设置,登录后可在后台「改密码」处修改(新密码至少 8 位)。
 建表与函数的完整 SQL 见 Supabase 项目里名为 `create_yuelao_blind_box` 的 migration。
 
 ## 本地运行
