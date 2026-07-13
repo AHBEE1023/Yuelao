@@ -14,11 +14,28 @@ const ERRORS = {
   not_drawn: '只能举报你抽到过的纸条哦',
   not_owner: '只能撤回自己的纸条哦',
   city_empty: '这座城市暂时还没有纸条,换个城市,或先存一张吧~',
+  no_order: '订单已失效,请重新发起~',
+  order_void: '这笔订单已失效,请重新发起~',
+  mock_disabled: '支付方式已切换,请刷新页面~',
   network: '网络开小差了,稍后再试~',
 }
 
 function errMsg(code) {
   return ERRORS[code] || ERRORS.network
+}
+
+// 分 -> 元,去掉多余的 .00
+function yuan(fen) {
+  if (!fen) return '0'
+  return (fen / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
+}
+
+const EMPTY_PRICING = {
+  mode: 'mock',
+  put_fen: 0,
+  draw_fen: 0,
+  free_puts_per_day: 0,
+  free_draws_per_day: 0,
 }
 
 const EMPTY_STATS = {
@@ -37,9 +54,13 @@ export default function Home() {
   const [deviceId, setDeviceId] = useState(null)
   const [stats, setStats] = useState(EMPTY_STATS)
   const [loaded, setLoaded] = useState(false)
+  const [pricing, setPricing] = useState(EMPTY_PRICING)
 
   useEffect(() => {
     setDeviceId(getDeviceId())
+    supabase.rpc('yuelao_pay_config_public').then(({ data }) => {
+      if (data) setPricing({ ...EMPTY_PRICING, ...data })
+    })
   }, [])
 
   async function refreshStats(id = deviceId) {
@@ -74,10 +95,10 @@ export default function Home() {
       </nav>
 
       {tab === 'draw' && (
-        <DrawTab deviceId={deviceId} stats={stats} loaded={loaded} onDone={refreshStats} />
+        <DrawTab deviceId={deviceId} stats={stats} loaded={loaded} pricing={pricing} onDone={refreshStats} />
       )}
       {tab === 'put' && (
-        <PutTab deviceId={deviceId} stats={stats} onDone={refreshStats} goDraw={() => setTab('draw')} />
+        <PutTab deviceId={deviceId} stats={stats} pricing={pricing} onDone={refreshStats} goDraw={() => setTab('draw')} />
       )}
       {tab === 'mine' && (
         <MineTab notes={stats.my_notes} deviceId={deviceId} loaded={loaded} onDone={refreshStats} />
@@ -136,7 +157,53 @@ function ShareButton() {
   )
 }
 
-function DrawTab({ deviceId, stats, loaded, onDone }) {
+// 收银台:mock 模式下展示模拟支付;真支付接入后此处改为展示网关二维码
+function Cashier({ deviceId, order, onPaid, onClose }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const title = order.kind === 'draw' ? '抽一张纸条' : '把纸条放进盲盒'
+
+  async function pay() {
+    if (busy) return
+    setBusy(true)
+    setErr('')
+    const { data, error } = await supabase.rpc('yuelao_pay_order', {
+      p_device_id: deviceId,
+      p_order_no: order.order_no,
+    })
+    setBusy(false)
+    if (error || !data) {
+      setErr(errMsg('network'))
+      return
+    }
+    onPaid(data)
+  }
+
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="cashier" onClick={(e) => e.stopPropagation()}>
+        <div className="cashier-title">{title}</div>
+        <div className="cashier-amt">
+          <span className="cashier-cur">¥</span>
+          {yuan(order.amount_fen)}
+        </div>
+        <div className="cashier-qr" aria-hidden="true">
+          <span>模拟收银台</span>
+        </div>
+        <p className="cashier-note">当前为测试收银台(模拟支付),不会真实扣款。</p>
+        <button className="btn submit-btn cashier-pay" onClick={pay} disabled={busy}>
+          {busy ? '支付中…' : `模拟支付 ¥${yuan(order.amount_fen)}`}
+        </button>
+        {err && <p className="err">{err}</p>}
+        <button className="btn btn-plain cashier-cancel" onClick={onClose} disabled={busy}>
+          取消
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
   const [shaking, setShaking] = useState(null) // 'male' | 'female' — 摇盒
   const [opening, setOpening] = useState(null) // 'male' | 'female' — 开盖那一拍
   const [note, setNote] = useState(null)
@@ -145,8 +212,11 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
   const [reporting, setReporting] = useState(false)
   const [reported, setReported] = useState(false)
   const [city, setCity] = useState('')
+  const [cashier, setCashier] = useState(null) // 待支付的抽取订单
+  const [pending, setPending] = useState(false) // 正在创建订单
 
   const outOfDraws = loaded && stats.draws_left <= 0
+  const drawFen = pricing.draw_fen
 
   // 两个盒子里出现过的城市并集,供筛选下拉;保持出现顺序(按数量已在后端排序)
   const cities = []
@@ -156,41 +226,60 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
   // 选中的城市若因数据变化已不存在,回退到"全部"
   const activeCity = cities.includes(city) ? city : ''
 
+  // 摇盒 → 开盖 → 揭晓纸条的仪式动画
+  function revealCeremony(gender, drawnNote) {
+    setShaking(gender)
+    setTimeout(() => {
+      setShaking(null)
+      setCopied(false)
+      setReporting(false)
+      setReported(false)
+      setOpening(gender)
+      setTimeout(() => {
+        setOpening(null)
+        setNote(drawnNote)
+        onDone()
+      }, 240)
+    }, 800)
+  }
+
   async function draw(gender) {
-    if (!deviceId || shaking || opening) return
+    if (!deviceId || shaking || opening || pending || cashier) return
     if (outOfDraws) {
       setToast(errMsg('daily_limit'))
       return
     }
     setToast('')
-    setShaking(gender)
-    const started = Date.now()
-    const { data, error } = await supabase.rpc('yuelao_draw_note', {
+    setPending(true)
+    const { data, error } = await supabase.rpc('yuelao_create_order', {
       p_device_id: deviceId,
+      p_kind: 'draw',
       p_gender: gender,
       p_city: activeCity || null,
     })
-    // 让盒子至少摇 0.8 秒,有开盲盒的仪式感
-    const wait = Math.max(0, 800 - (Date.now() - started))
-    setTimeout(() => {
-      setShaking(null)
-      if (error || !data) {
-        setToast(errMsg('network'))
-      } else if (!data.ok) {
-        setToast(errMsg(data.error))
-      } else {
-        // 成功:盒盖弹开的一拍,再揭晓纸条
-        setCopied(false)
-        setReporting(false)
-        setReported(false)
-        setOpening(gender)
-        setTimeout(() => {
-          setOpening(null)
-          setNote(data.note)
-          onDone()
-        }, 240)
-      }
-    }, wait)
+    setPending(false)
+    if (error || !data) {
+      setToast(errMsg('network'))
+    } else if (!data.ok) {
+      setToast(errMsg(data.error))
+    } else if (data.done) {
+      // 免费额度:直接揭晓
+      revealCeremony(gender, data.note)
+    } else {
+      // 需要付费:打开收银台,支付成功后再揭晓
+      setCashier({ ...data, gender })
+    }
+  }
+
+  function onDrawPaid(data) {
+    const gender = cashier?.gender
+    setCashier(null)
+    if (!data.ok) {
+      setToast(errMsg(data.error))
+      onDone()
+      return
+    }
+    revealCeremony(gender, data.note)
   }
 
   async function copyContact() {
@@ -274,10 +363,20 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
             点一下盒子,月老为你抽一张
             {activeCity ? <b> {activeCity} </b> : '的'}纸条
             <br />
+            {drawFen > 0 && <>每抽一张 <b>¥{yuan(drawFen)}</b> · </>}
             今日还可抽 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会抽到重复的人
           </>
         )}
       </p>
+
+      {cashier && (
+        <Cashier
+          deviceId={deviceId}
+          order={cashier}
+          onPaid={onDrawPaid}
+          onClose={() => setCashier(null)}
+        />
+      )}
 
       {note && (
         <div className="overlay" onClick={() => setNote(null)}>
@@ -370,11 +469,14 @@ const EMPTY_FORM = {
   message: '',
 }
 
-function PutTab({ deviceId, stats, onDone, goDraw }) {
+function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(false)
+  const [cashier, setCashier] = useState(null) // 待支付的存入订单
+
+  const putFen = pricing.put_fen
 
   function set(k, v) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -382,29 +484,46 @@ function PutTab({ deviceId, stats, onDone, goDraw }) {
 
   async function submit(e) {
     e.preventDefault()
-    if (busy || !deviceId) return
+    if (busy || !deviceId || cashier) return
     setErr('')
     setBusy(true)
-    const { data, error } = await supabase.rpc('yuelao_submit_note', {
+    const { data, error } = await supabase.rpc('yuelao_create_order', {
       p_device_id: deviceId,
-      p_gender: form.gender,
-      p_seeking: form.seeking,
-      p_nickname: form.nickname.trim(),
-      p_age: parseInt(form.age, 10) || 0,
-      p_city: form.city.trim(),
-      p_hobbies: form.hobbies.trim(),
-      p_contact: form.contact.trim(),
-      p_message: form.message.trim(),
+      p_kind: 'put',
+      p_payload: {
+        gender: form.gender,
+        seeking: form.seeking,
+        nickname: form.nickname.trim(),
+        age: parseInt(form.age, 10) || 0,
+        city: form.city.trim(),
+        hobbies: form.hobbies.trim(),
+        contact: form.contact.trim(),
+        message: form.message.trim(),
+      },
     })
     setBusy(false)
     if (error || !data) {
       setErr(errMsg('network'))
     } else if (!data.ok) {
       setErr(errMsg(data.error))
-    } else {
+    } else if (data.done) {
+      // 免费额度:直接成功
       setDone(true)
       onDone()
+    } else {
+      // 需要付费:打开收银台
+      setCashier(data)
     }
+  }
+
+  function onPutPaid(data) {
+    setCashier(null)
+    if (!data.ok) {
+      setErr(errMsg(data.error))
+      return
+    }
+    setDone(true)
+    onDone()
   }
 
   if (done) {
@@ -437,7 +556,10 @@ function PutTab({ deviceId, stats, onDone, goDraw }) {
   return (
     <form className="form-card" onSubmit={submit}>
       <h2>把自己放进盲盒 💌</h2>
-      <p className="sub">今日还可存 {stats.puts_left} 张 · 联系方式只有抽中的人能看到</p>
+      <p className="sub">
+        {putFen > 0 && <>存一张 ¥{yuan(putFen)} · </>}
+        今日还可存 {stats.puts_left} 张 · 联系方式只有抽中的人能看到
+      </p>
 
       <div className="row2">
         <div className="fgroup">
@@ -496,9 +618,18 @@ function PutTab({ deviceId, stats, onDone, goDraw }) {
       </div>
 
       <button className="btn submit-btn" disabled={busy}>
-        {busy ? '放入中…' : '放进盲盒'}
+        {busy ? '处理中…' : putFen > 0 ? `放进盲盒 · ¥${yuan(putFen)}` : '放进盲盒'}
       </button>
       {err && <p className="err">{err}</p>}
+
+      {cashier && (
+        <Cashier
+          deviceId={deviceId}
+          order={cashier}
+          onPaid={onPutPaid}
+          onClose={() => setCashier(null)}
+        />
+      )}
     </form>
   )
 }

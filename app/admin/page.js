@@ -124,6 +124,7 @@ function Dashboard({ pw, logout, onInvalid }) {
     }
   }
 
+  const yuan = (fen) => '¥' + ((fen || 0) / 100).toFixed(2).replace(/\.00$/, '')
   const cards = overview
     ? [
         { label: '待处理举报', value: overview.reported_pending, hot: overview.reported_pending > 0 },
@@ -132,6 +133,8 @@ function Dashboard({ pw, logout, onInvalid }) {
         { label: '今日新增', value: overview.notes_today },
         { label: '今日抽取', value: overview.draws_today },
         { label: '累计牵线', value: overview.total_draws },
+        { label: '今日收入', value: yuan(overview.revenue_today_fen) },
+        { label: '累计收入', value: yuan(overview.revenue_fen) },
       ]
     : []
 
@@ -157,6 +160,10 @@ function Dashboard({ pw, logout, onInvalid }) {
           </div>
         ))}
       </div>
+
+      {overview?.pricing && (
+        <PricingCard pw={pw} pricing={overview.pricing} onSaved={loadOverview} />
+      )}
 
       <div className="admin-filters">
         {FILTERS.map((f) => (
@@ -229,6 +236,57 @@ function Dashboard({ pw, logout, onInvalid }) {
 
       {showPw && <ChangePw pw={pw} onClose={() => setShowPw(false)} onChanged={onInvalid} />}
     </main>
+  )
+}
+
+function PricingCard({ pw, pricing, onSaved }) {
+  const [putYuan, setPutYuan] = useState((pricing.put_fen / 100).toString())
+  const [drawYuan, setDrawYuan] = useState((pricing.draw_fen / 100).toString())
+  const [freePuts, setFreePuts] = useState(String(pricing.free_puts_per_day))
+  const [freeDraws, setFreeDraws] = useState(String(pricing.free_draws_per_day))
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function save() {
+    if (busy) return
+    setBusy(true)
+    setMsg('')
+    const { data } = await supabase.rpc('yuelao_admin_set_pricing', {
+      p_password: pw,
+      p_put_fen: Math.round(parseFloat(putYuan || '0') * 100),
+      p_draw_fen: Math.round(parseFloat(drawYuan || '0') * 100),
+      p_free_puts: parseInt(freePuts || '0', 10),
+      p_free_draws: parseInt(freeDraws || '0', 10),
+    })
+    setBusy(false)
+    if (data?.ok) {
+      setMsg('已保存')
+      onSaved()
+      setTimeout(() => setMsg(''), 1800)
+    } else {
+      setMsg('保存失败,检查数值')
+    }
+  }
+
+  return (
+    <div className="pricing-card">
+      <div className="pricing-head">
+        <span className="pricing-title">计费设置</span>
+        <span className="pricing-mode">支付方式:{pricing.mode === 'mock' ? '模拟支付(测试)' : pricing.mode}</span>
+      </div>
+      <div className="pricing-grid">
+        <label>存入价格(元)<input type="number" min="0" step="0.5" value={putYuan} onChange={(e) => setPutYuan(e.target.value)} /></label>
+        <label>抽取价格(元)<input type="number" min="0" step="0.5" value={drawYuan} onChange={(e) => setDrawYuan(e.target.value)} /></label>
+        <label>每日免费存<input type="number" min="0" step="1" value={freePuts} onChange={(e) => setFreePuts(e.target.value)} /></label>
+        <label>每日免费抽<input type="number" min="0" step="1" value={freeDraws} onChange={(e) => setFreeDraws(e.target.value)} /></label>
+      </div>
+      <div className="pricing-foot">
+        <span className="pricing-msg">{msg}</span>
+        <button className="admin-btn primary sm" onClick={save} disabled={busy}>
+          {busy ? '保存中…' : '保存计费'}
+        </button>
+      </div>
+    </div>
   )
 }
 
