@@ -3,6 +3,7 @@
 线上版「月老盲盒 / 脱单盲盒」:**存一张纸条,抽一段缘分**。
 
 - 💌 **存纸条**:留下昵称、年龄、城市、爱好、微信号和一句话,放进男生盒或女生盒
+- 💰 **付费玩法**:存入与抽取均可收费(价格/免费额度后台可配),经过服务端订单校验后才执行,联系方式付费抽中才可见
 - 🎁 **抽纸条**:从异性盒子里随机抽一张,抽中才能看到对方联系方式;可**按城市筛选**同城缘分,界面实时显示今日剩余次数
 - 🔗 **分享**:一键调起系统分享面板(手机可直接分享到微信),不支持时自动复制链接
 - 📱 **可安装(PWA)**:支持"添加到主屏幕",像原生 App 一样全屏打开,配月老红线专属图标
@@ -31,6 +32,21 @@
 数据库对象全部使用 `yuelao_` 前缀:表 `yuelao_notes` / `yuelao_draws` / `yuelao_reports` / `yuelao_admin`,
 用户函数 `yuelao_submit_note` / `yuelao_draw_note` / `yuelao_report_note` / `yuelao_withdraw_note` / `yuelao_stats`,
 后台函数 `yuelao_admin_login` / `yuelao_admin_overview` / `yuelao_admin_list` / `yuelao_admin_set_status` / `yuelao_admin_set_password`。
+
+## 付费与订单
+
+存入/抽取通过订单系统收费,所有金额与"执行动作"都在服务端确认:
+
+- 表 `yuelao_pay_config`(价格/免费额度/支付方式)、`yuelao_orders`(订单)。
+- `yuelao_create_order` 先校验(敏感词、字段、每日上限、盒子是否有可抽的纸条)再定价;
+  免费额度内直接完成,否则返回待支付订单。
+- 支付确认后才真正插入纸条 / 执行抽取(`yuelao_pay_order` 为 mock 模式的确认入口,
+  真支付接入时由网关 webhook 验签后走同一"确认并执行"逻辑),幂等、抽空自动作废(真实环境触发退款)。
+- 旧的免费 `yuelao_submit_note` / `yuelao_draw_note` 已收回执行权限,无法绕过付费。
+- **接入真支付**:把 `yuelao_pay_config.mode` 改为 `wechat`/`alipay`/`stripe`,并实现对应网关下单 +
+  webhook 验签(需商户号、API 密钥、ICP 备案域名);当前默认 `mock` 模拟收银台,便于开发联调。
+
+后台「计费设置」可随时调整存入/抽取价格与每日免费次数,并查看今日/累计收入。
 
 ## 运营后台
 
