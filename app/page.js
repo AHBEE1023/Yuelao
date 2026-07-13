@@ -90,7 +90,7 @@ export default function Home() {
         <br />
         请勿轻信转账、投资、刷单等要求,谨防诈骗。
         <br />
-        已牵起 {stats.total_draws} 段缘分
+        已牵起 <span className="tally">{stats.total_draws}</span> 段缘分
       </footer>
     </main>
   )
@@ -137,7 +137,8 @@ function ShareButton() {
 }
 
 function DrawTab({ deviceId, stats, loaded, onDone }) {
-  const [shaking, setShaking] = useState(null) // 'male' | 'female'
+  const [shaking, setShaking] = useState(null) // 'male' | 'female' — 摇盒
+  const [opening, setOpening] = useState(null) // 'male' | 'female' — 开盖那一拍
   const [note, setNote] = useState(null)
   const [toast, setToast] = useState('')
   const [copied, setCopied] = useState(false)
@@ -156,7 +157,7 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
   const activeCity = cities.includes(city) ? city : ''
 
   async function draw(gender) {
-    if (!deviceId || shaking) return
+    if (!deviceId || shaking || opening) return
     if (outOfDraws) {
       setToast(errMsg('daily_limit'))
       return
@@ -178,11 +179,16 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
       } else if (!data.ok) {
         setToast(errMsg(data.error))
       } else {
+        // 成功:盒盖弹开的一拍,再揭晓纸条
         setCopied(false)
         setReporting(false)
         setReported(false)
-        setNote(data.note)
-        onDone()
+        setOpening(gender)
+        setTimeout(() => {
+          setOpening(null)
+          setNote(data.note)
+          onDone()
+        }, 240)
       }
     }, wait)
   }
@@ -225,22 +231,36 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
       )}
       <div className="boxes">
         <button
-          className={`box ${shaking === 'male' ? 'shaking' : ''}`}
+          className={`box ${shaking === 'male' ? 'shaking' : ''} ${opening === 'male' ? 'opening' : ''}`}
           onClick={() => draw('male')}
           disabled={outOfDraws}
         >
-          <span className="emoji">💙</span>
-          <h3>男生盒</h3>
-          <div className="count">{loaded ? `${stats.male} 张纸条在等待` : '清点中…'}</div>
+          <span className="box-lid" aria-hidden="true" />
+          <span className="box-ribbon" aria-hidden="true" />
+          <span className="box-knot" aria-hidden="true" />
+          <span className="box-inner">
+            <span className="emoji">💙</span>
+            <h3>男生盒</h3>
+            <div className="count">
+              {loaded ? `${stats.male} 张纸条在等待` : <span className="skeleton count-skel" aria-label="清点中" />}
+            </div>
+          </span>
         </button>
         <button
-          className={`box ${shaking === 'female' ? 'shaking' : ''}`}
+          className={`box ${shaking === 'female' ? 'shaking' : ''} ${opening === 'female' ? 'opening' : ''}`}
           onClick={() => draw('female')}
           disabled={outOfDraws}
         >
-          <span className="emoji">❤️</span>
-          <h3>女生盒</h3>
-          <div className="count">{loaded ? `${stats.female} 张纸条在等待` : '清点中…'}</div>
+          <span className="box-lid" aria-hidden="true" />
+          <span className="box-ribbon" aria-hidden="true" />
+          <span className="box-knot" aria-hidden="true" />
+          <span className="box-inner">
+            <span className="emoji">❤️</span>
+            <h3>女生盒</h3>
+            <div className="count">
+              {loaded ? `${stats.female} 张纸条在等待` : <span className="skeleton count-skel" aria-label="清点中" />}
+            </div>
+          </span>
         </button>
       </div>
 
@@ -261,7 +281,23 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
 
       {note && (
         <div className="overlay" onClick={() => setNote(null)}>
+          <div className="confetti" aria-hidden="true">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <i
+                key={i}
+                className="confetti-bit"
+                style={{
+                  left: `${(i * 8.3 + 5) % 100}%`,
+                  '--dur': `${1.05 + (i % 4) * 0.18}s`,
+                  '--delay': `${(i % 6) * 0.05}s`,
+                  '--rot': `${(i % 2 ? 1 : -1) * (140 + i * 20)}deg`,
+                  '--drift': `${(i % 2 ? 1 : -1) * (12 + (i % 3) * 9)}px`,
+                }}
+              />
+            ))}
+          </div>
           <div className="note-card" onClick={(e) => e.stopPropagation()}>
+            <span className="note-seal" aria-hidden="true">囍</span>
             <div className="top">
               <h2>{note.nickname}</h2>
               <span className="meta">
@@ -282,8 +318,8 @@ function DrawTab({ deviceId, stats, loaded, onDone }) {
             )}
             <div className="contact-row">
               <span className="cid">{note.contact}</span>
-              <button className="btn btn-red" onClick={copyContact}>
-                {copied ? '已复制' : '复制微信'}
+              <button className={`btn btn-red${copied ? ' copied' : ''}`} onClick={copyContact}>
+                {copied ? '✓ 已复制' : '复制微信'}
               </button>
             </div>
             <p className="safety">⚠️ 添加好友后注意保护隐私,涉及金钱一律是骗子。</p>
@@ -483,14 +519,20 @@ function MineTab({ notes, deviceId, loaded, onDone }) {
   }
 
   if (!loaded) {
-    return <div className="empty">正在翻看你的纸条…</div>
+    return (
+      <div className="empty loading" aria-busy="true">
+        <div className="empty-row skeleton" />
+        <div className="empty-row skeleton" />
+        <div className="empty-row skeleton" />
+      </div>
+    )
   }
   if (!notes || notes.length === 0) {
     return (
       <div className="empty">
-        你还没有存过纸条
-        <br />
-        去「存纸条」把自己放进盲盒吧 💌
+        <span className="empty-art">💌</span>
+        <div className="empty-title">你还没有存过纸条</div>
+        <div className="empty-sub">去「存纸条」把自己放进盲盒吧</div>
       </div>
     )
   }
@@ -505,7 +547,8 @@ function MineTab({ notes, deviceId, loaded, onDone }) {
             </div>
             <div className="sub">
               {new Date(n.created_at).toLocaleDateString('zh-CN')} 放入
-              {n.status === 'hidden' ? ' · 已因举报下架' : ''}
+              {n.status === 'hidden' && <span className="status-pill hidden">已下架</span>}
+              {n.status === 'withdrawn' && <span className="status-pill withdrawn">已撤回</span>}
             </div>
           </div>
           <div className="mine-right">
