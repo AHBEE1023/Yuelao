@@ -169,7 +169,7 @@ function Dashboard({ pw, logout, onInvalid }) {
           </button>
         ))}
         <button className="admin-refresh" onClick={() => { loadList(); loadOverview() }}>
-          刷新
+          ↻ 刷新
         </button>
       </div>
 
