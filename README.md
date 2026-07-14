@@ -40,9 +40,14 @@
 - 表 `yuelao_pay_config`(价格/免费额度/支付方式)、`yuelao_orders`(订单)。
 - `yuelao_create_order` 先校验(敏感词、字段、每日上限、盒子是否有可抽的纸条)再定价;
   免费额度内直接完成,否则返回待支付订单。
-- 支付确认后才真正插入纸条 / 执行抽取(`yuelao_pay_order` 为 mock 模式的确认入口,
-  真支付接入时由网关 webhook 验签后走同一"确认并执行"逻辑),幂等、抽空自动作废(真实环境触发退款)。
-- 旧的免费 `yuelao_submit_note` / `yuelao_draw_note` 已收回执行权限,无法绕过付费。
+- 支付确认后才真正插入纸条 / 执行抽取:确认逻辑集中在内部函数 `yuelao__confirm_order`
+  (加行锁、幂等重放、抽空自动作废),由 `yuelao_create_order` 免费路径、`yuelao_pay_order`
+  (mock 确认入口)、以及未来真支付 webhook **共用同一套逻辑**,避免网关重试导致重复执行。
+- `yuelao_create_order` 按 `device_id` 事务级串行(`pg_advisory_xact_lock`),消除免费额度/每日
+  上限的并发竞态;待支付订单 15 分钟过期、计入每日上限并有堆积上限,防止刷单与锁价套利。
+- **上线切换须同步**:付费前端上线时,必须同时收回旧的免费 `yuelao_submit_note` /
+  `yuelao_draw_note` 对 anon 的执行权限(当前线上仍是免费前端,故这两个接口暂时保留授权;
+  收回与前端切换同步进行,避免出现"能绕过付费"的空窗)。
 - **接入真支付**:把 `yuelao_pay_config.mode` 改为 `wechat`/`alipay`/`stripe`,并实现对应网关下单 +
   webhook 验签(需商户号、API 密钥、ICP 备案域名);当前默认 `mock` 模拟收银台,便于开发联调。
 
