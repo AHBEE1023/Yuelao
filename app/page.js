@@ -16,9 +16,14 @@ const ERRORS = {
   city_empty: '这座城市暂时还没有纸条,换个城市,或先存一张吧~',
   no_order: '订单已失效,请重新发起~',
   order_void: '这笔订单已失效,请重新发起~',
+  order_expired: '订单已超时,请重新发起~',
+  too_many_pending: '有未完成的订单,稍等片刻再试~',
   mock_disabled: '支付方式已切换,请刷新页面~',
   network: '网络开小差了,稍后再试~',
 }
+
+// 已抽中但还没确认收下的纸条,存在本地,防止动画期间刷新/切走导致付费结果丢失
+const PENDING_REVEAL_KEY = 'yuelao_pending_reveal'
 
 function errMsg(code) {
   return ERRORS[code] || ERRORS.network
@@ -58,9 +63,13 @@ export default function Home() {
 
   useEffect(() => {
     setDeviceId(getDeviceId())
-    supabase.rpc('yuelao_pay_config_public').then(({ data }) => {
-      if (data) setPricing({ ...EMPTY_PRICING, ...data })
-    })
+    // 载入计费配置,失败重试一次;拿不到就退回默认(收银台仍会显示订单真实金额)
+    async function loadPricing(retry = true) {
+      const { data, error } = await supabase.rpc('yuelao_pay_config_public')
+      if (!error && data) setPricing({ ...EMPTY_PRICING, ...data })
+      else if (retry) setTimeout(() => loadPricing(false), 1200)
+    }
+    loadPricing()
   }, [])
 
   async function refreshStats(id = deviceId) {
@@ -218,6 +227,23 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
   const outOfDraws = loaded && stats.draws_left <= 0
   const drawFen = pricing.draw_fen
 
+  // 恢复:若上次抽中的纸条因刷新/切走未及展示,重新弹出(付费结果不丢)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PENDING_REVEAL_KEY)
+      if (saved) setNote(JSON.parse(saved))
+    } catch {
+      // 解析失败忽略
+    }
+  }, [])
+
+  function dismissNote() {
+    try {
+      localStorage.removeItem(PENDING_REVEAL_KEY)
+    } catch {}
+    setNote(null)
+  }
+
   // 两个盒子里出现过的城市并集,供筛选下拉;保持出现顺序(按数量已在后端排序)
   const cities = []
   for (const c of [...(stats.male_cities || []), ...(stats.female_cities || [])]) {
@@ -228,6 +254,10 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
 
   // 摇盒 → 开盖 → 揭晓纸条的仪式动画
   function revealCeremony(gender, drawnNote) {
+    // 立即落盘:动画期间即使刷新/切走,付费抽中的纸条也不会丢
+    try {
+      localStorage.setItem(PENDING_REVEAL_KEY, JSON.stringify(drawnNote))
+    } catch {}
     setShaking(gender)
     setTimeout(() => {
       setShaking(null)
@@ -379,7 +409,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
       )}
 
       {note && (
-        <div className="overlay" onClick={() => setNote(null)}>
+        <div className="overlay" onClick={dismissNote}>
           <div className="confetti" aria-hidden="true">
             {Array.from({ length: 12 }).map((_, i) => (
               <i
@@ -446,7 +476,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
                 >
                   {reported ? '已举报,谢谢' : '举报此纸条'}
                 </button>
-                <button className="btn btn-red" onClick={() => setNote(null)}>
+                <button className="btn btn-red" onClick={dismissNote}>
                   收下这段缘分
                 </button>
               </div>
@@ -679,7 +709,6 @@ function MineTab({ notes, deviceId, loaded, onDone }) {
             <div className="sub">
               {new Date(n.created_at).toLocaleDateString('zh-CN')} 放入
               {n.status === 'hidden' && <span className="status-pill hidden">已下架</span>}
-              {n.status === 'withdrawn' && <span className="status-pill withdrawn">已撤回</span>}
             </div>
           </div>
           <div className="mine-right">

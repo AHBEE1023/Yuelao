@@ -162,7 +162,7 @@ function Dashboard({ pw, logout, onInvalid }) {
       </div>
 
       {overview?.pricing && (
-        <PricingCard pw={pw} pricing={overview.pricing} onSaved={loadOverview} />
+        <PricingCard pw={pw} pricing={overview.pricing} onSaved={loadOverview} onInvalid={onInvalid} />
       )}
 
       <div className="admin-filters">
@@ -239,7 +239,7 @@ function Dashboard({ pw, logout, onInvalid }) {
   )
 }
 
-function PricingCard({ pw, pricing, onSaved }) {
+function PricingCard({ pw, pricing, onSaved, onInvalid }) {
   const [putYuan, setPutYuan] = useState((pricing.put_fen / 100).toString())
   const [drawYuan, setDrawYuan] = useState((pricing.draw_fen / 100).toString())
   const [freePuts, setFreePuts] = useState(String(pricing.free_puts_per_day))
@@ -247,22 +247,43 @@ function PricingCard({ pw, pricing, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
+  // 元 -> 分,非法输入(NaN)判为无效,避免把价格写成 0/NULL
+  function fen(v) {
+    const n = Math.round(parseFloat(v) * 100)
+    return Number.isFinite(n) ? n : NaN
+  }
+  function count(v) {
+    const n = parseInt(v, 10)
+    return Number.isFinite(n) ? n : NaN
+  }
+
   async function save() {
     if (busy) return
+    const putFen = fen(putYuan)
+    const drawFen = fen(drawYuan)
+    const fp = count(freePuts)
+    const fd = count(freeDraws)
+    if ([putFen, drawFen, fp, fd].some((n) => Number.isNaN(n) || n < 0)) {
+      setMsg('请填写有效的数值')
+      return
+    }
     setBusy(true)
     setMsg('')
-    const { data } = await supabase.rpc('yuelao_admin_set_pricing', {
+    const { data, error } = await supabase.rpc('yuelao_admin_set_pricing', {
       p_password: pw,
-      p_put_fen: Math.round(parseFloat(putYuan || '0') * 100),
-      p_draw_fen: Math.round(parseFloat(drawYuan || '0') * 100),
-      p_free_puts: parseInt(freePuts || '0', 10),
-      p_free_draws: parseInt(freeDraws || '0', 10),
+      p_put_fen: putFen,
+      p_draw_fen: drawFen,
+      p_free_puts: fp,
+      p_free_draws: fd,
     })
     setBusy(false)
+    if (data && !data.ok && data.error === 'bad_password') return onInvalid()
     if (data?.ok) {
       setMsg('已保存')
       onSaved()
       setTimeout(() => setMsg(''), 1800)
+    } else if (error) {
+      setMsg('网络错误,稍后再试')
     } else {
       setMsg('保存失败,检查数值')
     }
