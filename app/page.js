@@ -426,7 +426,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
             ))}
           </div>
           <div className="note-card" onClick={(e) => e.stopPropagation()}>
-            <span className="note-seal" aria-hidden="true">囍</span>
+            <span className="note-seal" aria-hidden="true">缘</span>
             <div className="top">
               <h2>{note.nickname}</h2>
               <span className="meta">
