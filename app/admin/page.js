@@ -124,7 +124,7 @@ function Dashboard({ pw, logout, onInvalid }) {
     }
   }
 
-  const yuan = (fen) => '¥' + ((fen || 0) / 100).toFixed(2).replace(/\.00$/, '')
+  const ringgit = (sen) => 'RM' + ((sen || 0) / 100).toFixed(2).replace(/\.00$/, '')
   const cards = overview
     ? [
         { label: '待处理举报', value: overview.reported_pending, hot: overview.reported_pending > 0 },
@@ -133,8 +133,8 @@ function Dashboard({ pw, logout, onInvalid }) {
         { label: '今日新增', value: overview.notes_today },
         { label: '今日抽取', value: overview.draws_today },
         { label: '累计牵线', value: overview.total_draws },
-        { label: '今日收入', value: yuan(overview.revenue_today_fen) },
-        { label: '累计收入', value: yuan(overview.revenue_fen) },
+        { label: '今日收入', value: ringgit(overview.revenue_today_fen) },
+        { label: '累计收入', value: ringgit(overview.revenue_fen) },
       ]
     : []
 
@@ -240,15 +240,15 @@ function Dashboard({ pw, logout, onInvalid }) {
 }
 
 function PricingCard({ pw, pricing, onSaved, onInvalid }) {
-  const [putYuan, setPutYuan] = useState((pricing.put_fen / 100).toString())
-  const [drawYuan, setDrawYuan] = useState((pricing.draw_fen / 100).toString())
+  const [putRm, setPutRm] = useState((pricing.put_fen / 100).toString())
+  const [drawRm, setDrawRm] = useState((pricing.draw_fen / 100).toString())
   const [freePuts, setFreePuts] = useState(String(pricing.free_puts_per_day))
   const [freeDraws, setFreeDraws] = useState(String(pricing.free_draws_per_day))
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
-  // 元 -> 分,非法输入(NaN)判为无效,避免把价格写成 0/NULL
-  function fen(v) {
+  // RM -> sen,非法输入(NaN)判为无效,避免把价格写成 0/NULL
+  function sen(v) {
     const n = Math.round(parseFloat(v) * 100)
     return Number.isFinite(n) ? n : NaN
   }
@@ -259,12 +259,16 @@ function PricingCard({ pw, pricing, onSaved, onInvalid }) {
 
   async function save() {
     if (busy) return
-    const putFen = fen(putYuan)
-    const drawFen = fen(drawYuan)
+    const putFen = sen(putRm)
+    const drawFen = sen(drawRm)
     const fp = count(freePuts)
     const fd = count(freeDraws)
     if ([putFen, drawFen, fp, fd].some((n) => Number.isNaN(n) || n < 0)) {
       setMsg('请填写有效的数值')
+      return
+    }
+    if (pricing.mode === 'stripe' && [putFen, drawFen].some((n) => n > 0 && n < 200)) {
+      setMsg('Stripe 的收费项目最低为 RM2')
       return
     }
     setBusy(true)
@@ -293,11 +297,11 @@ function PricingCard({ pw, pricing, onSaved, onInvalid }) {
     <div className="pricing-card">
       <div className="pricing-head">
         <span className="pricing-title">计费设置</span>
-        <span className="pricing-mode">支付方式:{pricing.mode === 'mock' ? '模拟支付(测试)' : pricing.mode}</span>
+        <span className="pricing-mode">支付方式:{pricing.mode === 'mock' ? '模拟支付(测试)' : pricing.mode === 'stripe' ? 'Stripe (MYR)' : pricing.mode}</span>
       </div>
       <div className="pricing-grid">
-        <label>存入价格(元)<input type="number" min="0" step="0.5" value={putYuan} onChange={(e) => setPutYuan(e.target.value)} /></label>
-        <label>抽取价格(元)<input type="number" min="0" step="0.5" value={drawYuan} onChange={(e) => setDrawYuan(e.target.value)} /></label>
+        <label>存入价格(RM)<input type="number" min="0" step="0.5" value={putRm} onChange={(e) => setPutRm(e.target.value)} /></label>
+        <label>抽取价格(RM)<input type="number" min="0" step="0.5" value={drawRm} onChange={(e) => setDrawRm(e.target.value)} /></label>
         <label>每日免费存<input type="number" min="0" step="1" value={freePuts} onChange={(e) => setFreePuts(e.target.value)} /></label>
         <label>每日免费抽<input type="number" min="0" step="1" value={freeDraws} onChange={(e) => setFreeDraws(e.target.value)} /></label>
       </div>

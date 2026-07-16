@@ -55,8 +55,8 @@ create table if not exists public.yuelao_admin (
 create table if not exists public.yuelao_pay_config (
   id int primary key default 1,
   mode text not null default 'mock' check (mode in ('mock','wechat','alipay','stripe')),
-  put_fen int not null default 100,
-  draw_fen int not null default 100,
+  put_fen int not null default 200,
+  draw_fen int not null default 200,
   free_puts_per_day int not null default 0,
   free_draws_per_day int not null default 0,
   daily_put_cap int not null default 3,
@@ -78,12 +78,18 @@ create table if not exists public.yuelao_orders (
   payload jsonb,
   note_id uuid,
   result jsonb,
+  stripe_session_id text,
+  stripe_payment_intent_id text,
   created_at timestamptz not null default now(),
   expires_at timestamptz default (now() + interval '15 minutes'),
   paid_at timestamptz
 );
 create index if not exists yuelao_orders_device_idx on public.yuelao_orders (device_id, created_at);
 create index if not exists yuelao_orders_done_idx on public.yuelao_orders (device_id, kind, status, created_at);
+create unique index if not exists yuelao_orders_stripe_session_idx
+  on public.yuelao_orders (stripe_session_id) where stripe_session_id is not null;
+create unique index if not exists yuelao_orders_stripe_payment_intent_idx
+  on public.yuelao_orders (stripe_payment_intent_id) where stripe_payment_intent_id is not null;
 
 -- ---------------- RLS:全部开启且无策略 ----------------
 -- 直接读写表在 anon/authenticated 下被拒;所有访问只能经下面的 security-definer RPC。
@@ -109,11 +115,12 @@ on conflict (id) do nothing;
 --   yuelao_pay_config_public() -> jsonb                     当前计费配置(mode/价格/免费额度)
 --   yuelao_create_order(p_device_id, p_kind, p_gender, p_city, p_payload) -> jsonb
 --                                                           校验+定价+每设备串行;免费即刻完成,否则出待支付订单
---   yuelao_pay_order(p_device_id, p_order_no) -> jsonb      mock 支付确认(= 网关 webhook 等价物)
+--   yuelao_pay_order(p_device_id, p_order_no) -> jsonb      mock 模式支付确认
 --   yuelao_report_note(p_device_id, p_note_id, p_reason) -> jsonb   举报(3 个设备自动下架)
 --   yuelao_withdraw_note(p_device_id, p_note_id) -> jsonb   撤回自己的纸条
 -- 内部(对 anon/authenticated/public REVOKE EXECUTE,仅供其它 definer 函数调用):
 --   yuelao__do_put / yuelao__do_draw / yuelao__confirm_order / yuelao_admin_ok
+--   Stripe webhook 使用 service_role 调用 yuelao__confirm_order(uuid),anon/authenticated 无权限。
 -- 旧免费接口(付费上线时对 anon 收回执行权限):
 --   yuelao_submit_note(...) / yuelao_draw_note(...)
 -- 后台(密码保护):
