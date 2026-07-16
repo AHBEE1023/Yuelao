@@ -2,7 +2,7 @@ import './globals.css'
 import PwaRegister from './pwa-register'
 
 const SITE_URL = 'https://yuelao-sage.vercel.app'
-const TITLE = '月老盲盒 · 一元遇见有缘人'
+const TITLE = '月老盲盒 · RM2 遇见有缘人'
 const DESC = '存一张纸条,抽一段缘分。线上版月老盲盒:留下你的联系方式,或从盒子里抽出一位有缘人。'
 
 export const metadata = {

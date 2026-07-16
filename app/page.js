@@ -19,6 +19,9 @@ const ERRORS = {
   order_expired: '订单已超时,请重新发起~',
   too_many_pending: '有未完成的订单,稍等片刻再试~',
   mock_disabled: '支付方式已切换,请刷新页面~',
+  stripe_disabled: 'Stripe 支付尚未启用,请稍后再试~',
+  amount_below_stripe_minimum: '金额低于 Stripe 最低付款金额,请联系管理员~',
+  checkout_unavailable: '暂时无法打开安全收银台,稍后再试~',
   network: '网络开小差了,稍后再试~',
 }
 
@@ -29,10 +32,10 @@ function errMsg(code) {
   return ERRORS[code] || ERRORS.network
 }
 
-// 分 -> 元,去掉多余的 .00
-function yuan(fen) {
-  if (!fen) return '0'
-  return (fen / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
+// sen -> RM,去掉多余的 .00
+function ringgit(sen) {
+  if (!sen) return '0'
+  return (sen / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
 }
 
 const EMPTY_PRICING = {
@@ -166,16 +169,36 @@ function ShareButton() {
   )
 }
 
-// 收银台:mock 模式下展示模拟支付;真支付接入后此处改为展示网关二维码
-function Cashier({ deviceId, order, onPaid, onClose }) {
+// 收银台:mock 模式留作联调;stripe 模式跳转到 Stripe 托管 Checkout
+function Cashier({ deviceId, order, paymentMode, onPaid, onClose }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const title = order.kind === 'draw' ? '抽一张纸条' : '把纸条放进盲盒'
+  const isStripe = paymentMode === 'stripe'
 
   async function pay() {
     if (busy) return
     setBusy(true)
     setErr('')
+
+    if (isStripe) {
+      try {
+        const response = await fetch('/api/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: deviceId, order_no: order.order_no }),
+        })
+        const data = await response.json()
+        if (!response.ok || !data.url) throw new Error(data.error || 'checkout_unavailable')
+        window.location.assign(data.url)
+        return
+      } catch (error) {
+        setBusy(false)
+        setErr(errMsg(error.message))
+        return
+      }
+    }
+
     const { data, error } = await supabase.rpc('yuelao_pay_order', {
       p_device_id: deviceId,
       p_order_no: order.order_no,
@@ -193,15 +216,17 @@ function Cashier({ deviceId, order, onPaid, onClose }) {
       <div className="cashier" onClick={(e) => e.stopPropagation()}>
         <div className="cashier-title">{title}</div>
         <div className="cashier-amt">
-          <span className="cashier-cur">¥</span>
-          {yuan(order.amount_fen)}
+          <span className="cashier-cur">RM</span>
+          {ringgit(order.amount_fen)}
         </div>
         <div className="cashier-qr" aria-hidden="true">
-          <span>模拟收银台</span>
+          <span>{isStripe ? 'Stripe 安全支付' : '模拟收银台'}</span>
         </div>
-        <p className="cashier-note">当前为测试收银台(模拟支付),不会真实扣款。</p>
+        <p className="cashier-note">
+          {isStripe ? '将前往 Stripe 安全页面完成付款。支付成功后会自动返回。' : '当前为测试收银台(模拟支付),不会真实扣款。'}
+        </p>
         <button className="btn submit-btn cashier-pay" onClick={pay} disabled={busy}>
-          {busy ? '支付中…' : `模拟支付 ¥${yuan(order.amount_fen)}`}
+          {busy ? '处理中…' : isStripe ? `前往支付 RM${ringgit(order.amount_fen)}` : `模拟支付 RM${ringgit(order.amount_fen)}`}
         </button>
         {err && <p className="err">{err}</p>}
         <button className="btn btn-plain cashier-cancel" onClick={onClose} disabled={busy}>
@@ -393,7 +418,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
             点一下盒子,月老为你抽一张
             {activeCity ? <b> {activeCity} </b> : '的'}纸条
             <br />
-            {drawFen > 0 && <>每抽一张 <b>¥{yuan(drawFen)}</b> · </>}
+            {drawFen > 0 && <>每抽一张 <b>RM{ringgit(drawFen)}</b> · </>}
             今日还可抽 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会抽到重复的人
           </>
         )}
@@ -403,6 +428,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
         <Cashier
           deviceId={deviceId}
           order={cashier}
+          paymentMode={pricing.mode}
           onPaid={onDrawPaid}
           onClose={() => setCashier(null)}
         />
@@ -587,7 +613,7 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
     <form className="form-card" onSubmit={submit}>
       <h2>把自己放进盲盒 💌</h2>
       <p className="sub">
-        {putFen > 0 && <>存一张 ¥{yuan(putFen)} · </>}
+        {putFen > 0 && <>存一张 RM{ringgit(putFen)} · </>}
         今日还可存 {stats.puts_left} 张 · 联系方式只有抽中的人能看到
       </p>
 
@@ -648,7 +674,7 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
       </div>
 
       <button className="btn submit-btn" disabled={busy}>
-        {busy ? '处理中…' : putFen > 0 ? `放进盲盒 · ¥${yuan(putFen)}` : '放进盲盒'}
+        {busy ? '处理中…' : putFen > 0 ? `放进盲盒 · RM${ringgit(putFen)}` : '放进盲盒'}
       </button>
       {err && <p className="err">{err}</p>}
 
@@ -656,6 +682,7 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
         <Cashier
           deviceId={deviceId}
           order={cashier}
+          paymentMode={pricing.mode}
           onPaid={onPutPaid}
           onClose={() => setCashier(null)}
         />

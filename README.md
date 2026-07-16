@@ -3,7 +3,7 @@
 线上版「月老盲盒 / 脱单盲盒」:**存一张纸条,抽一段缘分**。
 
 - 💌 **存纸条**:留下昵称、年龄、城市、爱好、微信号和一句话,放进男生盒或女生盒
-- 💰 **付费玩法**:存入与抽取均可收费(价格/免费额度后台可配),经过服务端订单校验后才执行,联系方式付费抽中才可见
+- 💰 **RM2 付费玩法**:存入与抽取均通过 Stripe Checkout 以马币收费(价格/免费额度后台可配),经过服务端订单与支付校验后才执行,联系方式付费抽中才可见
 - 🎁 **抽纸条**:从异性盒子里随机抽一张,抽中才能看到对方联系方式;可**按城市筛选**同城缘分,界面实时显示今日剩余次数
 - 🔗 **分享**:一键调起系统分享面板(手机可直接分享到微信),不支持时自动复制链接
 - 📱 **可安装(PWA)**:支持"添加到主屏幕",像原生 App 一样全屏打开,配月老红线专属图标
@@ -14,7 +14,8 @@
 ## 技术栈
 
 - **前端**:Next.js 15 (App Router) + React 19,纯 CSS,无 UI 库
-- **后端**:Supabase (Postgres),无独立服务端
+- **服务端**:Next.js Route Handlers + Supabase (Postgres)
+- **支付**:Stripe Checkout + 签名 Webhook,币种 MYR
 
 ## 防滥用设计
 
@@ -42,14 +43,15 @@
   免费额度内直接完成,否则返回待支付订单。
 - 支付确认后才真正插入纸条 / 执行抽取:确认逻辑集中在内部函数 `yuelao__confirm_order`
   (加行锁、幂等重放、抽空自动作废),由 `yuelao_create_order` 免费路径、`yuelao_pay_order`
-  (mock 确认入口)、以及未来真支付 webhook **共用同一套逻辑**,避免网关重试导致重复执行。
+  (mock 确认入口)和 Stripe webhook **共用同一套逻辑**,避免回调重试导致重复执行。
 - `yuelao_create_order` 按 `device_id` 事务级串行(`pg_advisory_xact_lock`),消除免费额度/每日
-  上限的并发竞态;待支付订单 15 分钟过期、计入每日上限并有堆积上限,防止刷单与锁价套利。
-- **上线切换须同步**:付费前端上线时,必须同时收回旧的免费 `yuelao_submit_note` /
-  `yuelao_draw_note` 对 anon 的执行权限(当前线上仍是免费前端,故这两个接口暂时保留授权;
-  收回与前端切换同步进行,避免出现"能绕过付费"的空窗)。
-- **接入真支付**:把 `yuelao_pay_config.mode` 改为 `wechat`/`alipay`/`stripe`,并实现对应网关下单 +
-  webhook 验签(需商户号、API 密钥、ICP 备案域名);当前默认 `mock` 模拟收银台,便于开发联调。
+  上限的并发竞态;待支付订单默认 15 分钟过期,打开 Stripe Checkout 后与收银台同步延长到
+  31 分钟;订单计入每日上限并有堆积上限,防止刷单与锁价套利。
+- Stripe Checkout Session 与 PaymentIntent ID 记录在订单上并建立唯一索引;Webhook 先验签,再校验
+  `MYR` 币种、金额、订单及 Session 绑定关系。支付成功但订单无法完成时会发起幂等退款。
+- 内部确认 RPC 仅授予 `service_role`;Stripe 密钥和 Supabase 后台密钥只存在 Vercel 服务端。
+- 当前默认仍为 `mock` 模拟收银台。部署、迁移与 Webhook 测试完成后,才把
+  `yuelao_pay_config.mode` 切换为 `stripe`,避免未配置完整时影响线上用户。
 
 后台「计费设置」可随时调整存入/抽取价格与每日免费次数,并查看今日/累计收入。
 
@@ -68,14 +70,31 @@ npm run dev
 ```
 
 Supabase 的 URL 和 publishable key(本就是公开的客户端 key)在 `lib/supabase.js`
-里有默认值,开箱即用;也可以复制 `.env.example` 为 `.env.local` 覆盖,
-指向你自己的 Supabase 项目。
+里有默认值。Stripe Checkout 还需要复制 `.env.example` 为 `.env.local`,填写
+`SUPABASE_SECRET_KEY`、`STRIPE_SECRET_KEY` 和 `STRIPE_WEBHOOK_SECRET`。所有后台密钥都不得
+使用 `NEXT_PUBLIC_` 前缀或提交到 Git。
 
 ## 部署
 
-标准 Next.js 应用,直接部署到 Vercel 即可,无需配置任何环境变量
-(如需指向别的 Supabase 项目,设置 `NEXT_PUBLIC_SUPABASE_URL` 和
-`NEXT_PUBLIC_SUPABASE_ANON_KEY`)。
+部署到 Vercel 前后按以下顺序操作:
+
+1. 在 Supabase SQL Editor 执行 `supabase/migrations/*_stripe_myr_checkout.sql`。
+2. 在 Vercel 设置 `SUPABASE_SECRET_KEY` 与 Stripe 测试模式的 `STRIPE_SECRET_KEY`。
+3. 部署后在 Stripe Workbench 创建 Webhook Endpoint:
+   `https://你的域名/api/stripe/webhook`。监听
+   `checkout.session.completed`、`checkout.session.async_payment_succeeded`、
+   `checkout.session.expired`,并把签名密钥设为 Vercel 的 `STRIPE_WEBHOOK_SECRET`。
+4. 重新部署,使用 Stripe 测试卡完整测试存入、抽取、取消支付和重复 Webhook。
+5. 测试通过后执行:
+
+```sql
+update public.yuelao_pay_config
+set mode = 'stripe', put_fen = 200, draw_fen = 200, updated_at = now()
+where id = 1;
+```
+
+价格字段沿用旧名称 `*_fen`,在 MYR 模式下实际表示 sen;`200` 即 RM2。切换正式模式前,
+把 Vercel 密钥替换成 Stripe Live key,并为正式模式 Endpoint 设置对应的 Live webhook secret。
 
 ## 免责声明
 
