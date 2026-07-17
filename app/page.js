@@ -157,7 +157,14 @@ export default function Home() {
           />
         )}
         {tab === 'mine' && (
-          <MineTab stats={stats} deviceId={deviceId} loaded={loaded} onDone={refreshStats} goPut={() => setTab('put')} />
+          <MineTab
+            stats={stats}
+            deviceId={deviceId}
+            loaded={loaded}
+            onDone={refreshStats}
+            goPut={() => setTab('put')}
+            goDraw={() => setTab('draw')}
+          />
         )}
 
         <footer className="disclaimer">
@@ -317,7 +324,9 @@ function Shrine({ deviceId, order, onPaid, onClose }) {
           </button>
         </div>
         <p className="shrine-sub">
-          {isDraw ? `请一支 · ${order.gender === 'male' ? '男生签筒' : '女生签筒'}` : '把你的签放进签筒'}
+          {isDraw
+            ? `请一支 · ${order.gender === 'male' ? '男生签筒' : '女生签筒'}${order.city ? ` · 同城${order.city}` : ''}`
+            : '把你的签放进签筒'}
         </p>
         <div className="incense" aria-hidden="true">
           <i className="glow" />
@@ -485,7 +494,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate }) {
       } else if (data.done) {
         revealCeremony(gender, data.note)
       } else {
-        setCashier({ ...data, gender })
+        setCashier({ ...data, gender, city: activeCity })
       }
     })
   }
@@ -585,7 +594,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate }) {
                 请签 <b>¥{yuan(drawFen)}</b> ·{' '}
               </>
             )}
-            今日还可请 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会重复请到同一人
+            今日还可请 <b>{loaded ? stats.draws_left : 5}</b> 次 · 未请中自动退香火钱
           </>
         )}
       </p>
@@ -1083,7 +1092,7 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw, requireGate }) {
 }
 
 // ---- 我的签 · 缘分簿 ----
-function MineTab({ stats, deviceId, loaded, onDone, goPut }) {
+function MineTab({ stats, deviceId, loaded, onDone, goPut, goDraw }) {
   const [busyId, setBusyId] = useState(null)
   const [confirmId, setConfirmId] = useState(null)
   const notes = stats.my_notes || []
@@ -1141,6 +1150,10 @@ function MineTab({ stats, deviceId, loaded, onDone, goPut }) {
           )}
         </div>
       </div>
+
+      <button className="hook f-hand" onClick={goDraw}>
+        想知道是谁请走了你?去求一支签,也许正是 TA ›
+      </button>
 
       {notes.map((n) => {
         const full = (n.draw_count || 0) >= 3

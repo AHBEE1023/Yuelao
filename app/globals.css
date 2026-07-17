@@ -1797,6 +1797,15 @@ button:disabled {
   flex: none;
 }
 
+.hook {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 12px;
+  font-size: 14.5px;
+  color: var(--zhu-deep);
+}
+
 .signitem {
   display: flex;
   align-items: center;
