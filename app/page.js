@@ -69,7 +69,10 @@ const EMPTY_PRICING = {
   draw_fen: 0,
   free_puts_per_day: 0,
   free_draws_per_day: 0,
+  lamp_fen: 660,
 }
+
+const EMPTY_WALL = { matched_month: 0, matched_total: 0, answered: 0, lamps_month: 0, lamps_total: 0 }
 
 const EMPTY_STATS = {
   male: 0,
@@ -81,6 +84,8 @@ const EMPTY_STATS = {
   female_cities: [],
   my_notes: [],
   my_hearts: 0,
+  pending_followup: null,
+  wall: EMPTY_WALL,
 }
 
 export default function Home() {
@@ -92,6 +97,9 @@ export default function Home() {
   const [gateOk, setGateOk] = useState(true) // 先乐观,挂载后读本地
   const [showGate, setShowGate] = useState(false)
   const [showSafe, setShowSafe] = useState(false)
+  const [showWall, setShowWall] = useState(false)
+  const [showMarket, setShowMarket] = useState(false)
+  const [followupNote, setFollowupNote] = useState(null) // {note_id, nickname, days}
 
   useEffect(() => {
     setDeviceId(getDeviceId())
@@ -116,6 +124,25 @@ export default function Home() {
     if (deviceId) refreshStats(deviceId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId])
+
+  // 七日回访:每支签只问一次;本次会话关掉就不再弹
+  useEffect(() => {
+    const fu = stats.pending_followup
+    if (!fu || !fu.note_id) return
+    try {
+      if (sessionStorage.getItem('yuelao_fu_' + fu.note_id)) return
+    } catch {}
+    setFollowupNote(fu)
+  }, [stats.pending_followup])
+
+  function dismissFollowup() {
+    if (followupNote) {
+      try {
+        sessionStorage.setItem('yuelao_fu_' + followupNote.note_id, '1')
+      } catch {}
+    }
+    setFollowupNote(null)
+  }
 
   // 写签/请签前的准入(18+ 与敏感信息单独同意);浏览不拦
   function requireGate(then) {
@@ -144,6 +171,9 @@ export default function Home() {
             pricing={pricing}
             onDone={refreshStats}
             requireGate={requireGate}
+            openWall={() => setShowWall(true)}
+            openMarket={() => setShowMarket(true)}
+            wall={stats.wall || EMPTY_WALL}
           />
         )}
         {tab === 'put' && (
@@ -205,7 +235,236 @@ export default function Home() {
         />
       )}
       {showSafe && <SafeSheet onClose={() => setShowSafe(false)} />}
+      {showWall && (
+        <WallSheet
+          deviceId={deviceId}
+          wall={stats.wall || EMPTY_WALL}
+          lampFen={pricing.lamp_fen}
+          onDone={refreshStats}
+          onClose={() => setShowWall(false)}
+        />
+      )}
+      {showMarket && <MarketSheet stats={stats} pricing={pricing} onClose={() => setShowMarket(false)} />}
+      {followupNote && (
+        <Followup
+          deviceId={deviceId}
+          fu={followupNote}
+          onClose={dismissFollowup}
+          onGood={() => {
+            dismissFollowup()
+            setShowWall(true)
+          }}
+          onDone={refreshStats}
+        />
+      )}
     </main>
+  )
+}
+
+// ---- 七日回访:每支签只问一次,回答匿名汇入灵验率 ----
+function Followup({ deviceId, fu, onClose, onGood, onDone }) {
+  const [busy, setBusy] = useState(false)
+  const [scamMode, setScamMode] = useState(false)
+  const [hint, setHint] = useState('')
+
+  async function answer(a) {
+    if (busy) return
+    setBusy(true)
+    const { data } = await supabase.rpc('yuelao_followup', {
+      p_device_id: deviceId,
+      p_note_id: fu.note_id,
+      p_answer: a,
+    })
+    setBusy(false)
+    if (!data?.ok) {
+      onClose()
+      return
+    }
+    onDone()
+    if (a === 'good') {
+      onGood()
+    } else if (a === 'slow') {
+      setHint('不急,好缘分要文火慢炖')
+      setTimeout(onClose, 1400)
+    } else {
+      setScamMode(true)
+    }
+  }
+
+  async function report(reason) {
+    await supabase.rpc('yuelao_report_note', {
+      p_device_id: deviceId,
+      p_note_id: fu.note_id,
+      p_reason: reason,
+    })
+    setHint('已举报。核实后将下架并退香火钱。')
+    setTimeout(onClose, 1600)
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="fu" onClick={(e) => e.stopPropagation()}>
+        <span className="fu-badge f-title">月老</span>
+        <h2 className="f-title">第七日 · 月老来问</h2>
+        <p className="fu-sub f-hand">红线牵起第 {fu.days} 天,和{fu.nickname}聊得如何?</p>
+        {!scamMode ? (
+          <>
+            <button className="fu-opt good" onClick={() => answer('good')} disabled={busy}>
+              <i>😊</i>
+              <span>
+                <b>聊得不错,谢谢月老</b>
+                <em>替你高兴!去点一盏还愿灯?</em>
+              </span>
+            </button>
+            <button className="fu-opt" onClick={() => answer('slow')} disabled={busy}>
+              <i>😐</i>
+              <span>
+                <b>还在慢慢来</b>
+                <em>不急,好缘分要文火慢炖</em>
+              </span>
+            </button>
+            <button className="fu-opt bad" onClick={() => answer('scam')} disabled={busy}>
+              <i>⚠️</i>
+              <span>
+                <b>遇到了骗子</b>
+                <em>立即举报 · 核实后退香火钱并封禁对方</em>
+              </span>
+            </button>
+          </>
+        ) : (
+          <div className="report-box">
+            <span className="report-title">对方哪里不对?</span>
+            <div className="report-reasons">
+              {['骗钱诈骗', '广告推广', '骚扰不适', '其他'].map((r) => (
+                <button key={r} className="btn-ghost sm" onClick={() => report(r)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {hint && <div className="share-hint">{hint}</div>}
+        <p className="fu-note">回访只此一次,不再打扰;你的回答将匿名汇入「灵验率」,帮后来人判断。</p>
+      </div>
+    </div>
+  )
+}
+
+// ---- 灵验墙 + 还愿灯 ----
+function WallSheet({ deviceId, wall, lampFen, onDone, onClose }) {
+  const [cashier, setCashier] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [thanks, setThanks] = useState(false)
+  const [err, setErr] = useState('')
+  const rate = wall.answered > 0 ? Math.round((wall.matched_total / wall.answered) * 100) : null
+
+  async function buyLamp() {
+    if (busy || cashier) return
+    setErr('')
+    setBusy(true)
+    const { data, error } = await supabase.rpc('yuelao_create_order', {
+      p_device_id: deviceId,
+      p_kind: 'lamp',
+    })
+    setBusy(false)
+    if (error || !data) return setErr(errMsg('network'))
+    if (!data.ok) return setErr(errMsg(data.error))
+    if (data.done) {
+      setThanks(true)
+      onDone()
+    } else {
+      setCashier(data)
+    }
+  }
+
+  function onLampPaid(data) {
+    setCashier(null)
+    if (!data.ok) return setErr(errMsg(data.error))
+    setThanks(true)
+    onDone()
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="wall" onClick={(e) => e.stopPropagation()}>
+        <div className="safe-head">
+          <h2 className="f-title">灵验墙</h2>
+          <button className="x" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <p className="wall-sub">
+          本月牵成 <b>{wall.matched_month}</b> 对
+          {rate !== null && (
+            <>
+              {' '}
+              · 灵验率 <b>{rate}%</b>
+            </>
+          )}{' '}
+          · 口径:七日回访答「聊得不错」
+        </p>
+        <div className="lamp-hero">
+          <i className="lamp-art" aria-hidden="true">
+            <em className="glow" />
+            <em className="flame" />
+            <em className="body" />
+            <em className="base" />
+          </i>
+          <b>本月已点亮 {wall.lamps_month} 盏还愿灯</b>
+          <p>缘分成了?回来点一盏灯——谢月老,也照亮还在等的人。灯会在灵验墙亮一个月。</p>
+          {thanks ? (
+            <div className="lamp-thanks">🏮 你的灯已挂上灵验墙,愿你们长长久久</div>
+          ) : (
+            <button className="btn-primary" onClick={buyLamp} disabled={busy}>
+              {busy ? '点灯中…' : `点一盏还愿灯 · ¥${yuan(lampFen)}`}
+            </button>
+          )}
+          {err && <p className="err">{err}</p>}
+        </div>
+        <p className="fu-note">还愿全凭心意,不点灯也不影响任何功能;回答与灯都匿名展示。</p>
+        {cashier && <Shrine deviceId={deviceId} order={cashier} onPaid={onLampPaid} onClose={() => setCashier(null)} />}
+      </div>
+    </div>
+  )
+}
+
+// ---- 今日行情:定价与供需公示(全员一价,不设暗价) ----
+function MarketSheet({ stats, pricing, onClose }) {
+  const scarce =
+    stats.male === stats.female ? null : stats.male < stats.female ? '男生签筒' : '女生签筒'
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="wall" onClick={(e) => e.stopPropagation()}>
+        <div className="safe-head">
+          <h2 className="f-title">今日签筒行情</h2>
+          <button className="x" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <p className="wall-sub">供需透明公示 · 全员一价,不设暗价</p>
+        <div className="mkt-grid">
+          <div className="mkt-card">
+            <b>写签</b>
+            <em className="f-title">¥{yuan(pricing.put_fen)}</em>
+            {pricing.free_puts_per_day > 0 && <i>每日前 {pricing.free_puts_per_day} 次免费</i>}
+          </div>
+          <div className="mkt-card">
+            <b>请签</b>
+            <em className="f-title">¥{yuan(pricing.draw_fen)}</em>
+            {pricing.free_draws_per_day > 0 && <i>每日前 {pricing.free_draws_per_day} 次免费</i>}
+          </div>
+        </div>
+        <div className="mkt-supply">
+          <b>筒内存量</b>
+          <div className="mkt-row">
+            <span className="pill blue">男生签筒 · {stats.male} 支</span>
+            <span className="pill rouge">女生签筒 · {stats.female} 支</span>
+          </div>
+          {scarce && <p>{scarce}紧俏——写一支自己的签,让筒里的缘分流动起来。</p>}
+        </div>
+        <p className="fu-note">未请中自动退香火钱;价格调整会在这里提前公示,不看人下菜。</p>
+      </div>
+    </div>
   )
 }
 
@@ -297,6 +556,7 @@ function Shrine({ deviceId, order, onPaid, onClose }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const isDraw = order.kind === 'draw'
+  const isLamp = order.kind === 'lamp'
 
   async function pay() {
     if (busy) return
@@ -318,15 +578,19 @@ function Shrine({ deviceId, order, onPaid, onClose }) {
     <div className="overlay" onClick={busy ? undefined : onClose}>
       <div className="shrine" onClick={(e) => e.stopPropagation()}>
         <div className="shrine-head">
-          <span className="f-title shrine-title">{isDraw ? '添香火 · 请月老抽签' : '添香火 · 托月老收签'}</span>
+          <span className="f-title shrine-title">
+            {isLamp ? '添灯油 · 点一盏还愿灯' : isDraw ? '添香火 · 请月老抽签' : '添香火 · 托月老收签'}
+          </span>
           <button className="x" onClick={onClose} disabled={busy}>
             ✕
           </button>
         </div>
         <p className="shrine-sub">
-          {isDraw
-            ? `请一支 · ${order.gender === 'male' ? '男生签筒' : '女生签筒'}${order.city ? ` · 同城${order.city}` : ''}`
-            : '把你的签放进签筒'}
+          {isLamp
+            ? '谢月老 · 灯挂灵验墙一个月'
+            : isDraw
+              ? `请一支 · ${order.gender === 'male' ? '男生签筒' : '女生签筒'}${order.city ? ` · 同城${order.city}` : ''}`
+              : '把你的签放进签筒'}
         </p>
         <div className="incense" aria-hidden="true">
           <i className="glow" />
@@ -343,9 +607,11 @@ function Shrine({ deviceId, order, onPaid, onClose }) {
         <div className="wyg">
           <b>你将获得</b>
           <p>
-            {isDraw
-              ? '随机请走 1 支真人手写签,请中才见微信;不会请到自己或请过的人;筒空自动退香火钱。'
-              : '你的签放进签筒,被请走时对方才能看到微信;可随时在「我的签」撤回。'}
+            {isLamp
+              ? '一盏还愿灯,匿名挂上灵验墙一个月;全凭心意,不影响任何功能。'
+              : isDraw
+                ? '随机请走 1 支真人手写签,请中才见微信;不会请到自己或请过的人;筒空自动退香火钱。'
+                : '你的签放进签筒,被请走时对方才能看到微信;可随时在「我的签」撤回。'}
           </p>
         </div>
         <p className="fair">请中才付 · 未请中自动退 · 当前为模拟支付,不会真实扣款</p>
@@ -414,7 +680,7 @@ function DailySign({ deviceId }) {
 }
 
 // ---- 求签(首页)----
-function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate }) {
+function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate, openWall, openMarket, wall }) {
   const [shaking, setShaking] = useState(null) // 'male' | 'female'
   const [note, setNote] = useState(null)
   const [toast, setToast] = useState('')
@@ -615,6 +881,17 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate }) {
           <br />
           已审
         </i>
+      </div>
+
+      <div className="entry-row">
+        <button className="entry" onClick={openWall}>
+          <b>🏮 灵验墙</b>
+          <span>本月牵成 {wall.matched_month} 对 ›</span>
+        </button>
+        <button className="entry" onClick={openMarket}>
+          <b>📜 今日行情</b>
+          <span>价格与供需公示 ›</span>
+        </button>
       </div>
 
       <DailySign deviceId={deviceId} />
