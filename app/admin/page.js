@@ -60,8 +60,8 @@ function Login({ onLogin }) {
   return (
     <main className="admin-wrap">
       <form className="admin-card login" onSubmit={submit}>
-        <h1>🪢 月老盲盒 · 后台</h1>
-        <p className="sub">请输入管理密码</p>
+        <h1>月老盲盒 · 后台</h1>
+        <p className="sub">只有月老本人能进</p>
         <input
           type="password"
           value={val}
@@ -128,10 +128,10 @@ function Dashboard({ pw, logout, onInvalid }) {
   const cards = overview
     ? [
         { label: '待处理举报', value: overview.reported_pending, hot: overview.reported_pending > 0 },
-        { label: '在架纸条', value: overview.active },
+        { label: '在架签', value: overview.active },
         { label: '已下架', value: overview.hidden },
         { label: '今日新增', value: overview.notes_today },
-        { label: '今日抽取', value: overview.draws_today },
+        { label: '今日请签', value: overview.draws_today },
         { label: '累计牵线', value: overview.total_draws },
         { label: '今日收入', value: yuan(overview.revenue_today_fen) },
         { label: '累计收入', value: yuan(overview.revenue_fen) },
@@ -141,7 +141,7 @@ function Dashboard({ pw, logout, onInvalid }) {
   return (
     <main className="admin-wrap">
       <div className="admin-top">
-        <h1>🪢 月老盲盒 · 后台</h1>
+        <h1>月老盲盒 · 后台</h1>
         <div className="admin-top-actions">
           <button className="admin-btn ghost" onClick={() => setShowPw(true)}>
             改密码
@@ -209,7 +209,7 @@ function Dashboard({ pw, logout, onInvalid }) {
               )}
               {n.hobbies && <div className="an-line">爱好:{n.hobbies}</div>}
               {n.message && <div className="an-line">留言:{n.message}</div>}
-              <div className="an-line contact">微信:{n.contact} · 被抽 {n.draw_count} 次</div>
+              <div className="an-line contact">微信:{n.contact} · 被请 {n.draw_count} 次</div>
               <div className="an-actions">
                 {n.status === 'active' ? (
                   <button
@@ -296,10 +296,10 @@ function PricingCard({ pw, pricing, onSaved, onInvalid }) {
         <span className="pricing-mode">支付方式:{pricing.mode === 'mock' ? '模拟支付(测试)' : pricing.mode}</span>
       </div>
       <div className="pricing-grid">
-        <label>存入价格(元)<input type="number" min="0" step="0.5" value={putYuan} onChange={(e) => setPutYuan(e.target.value)} /></label>
-        <label>抽取价格(元)<input type="number" min="0" step="0.5" value={drawYuan} onChange={(e) => setDrawYuan(e.target.value)} /></label>
-        <label>每日免费存<input type="number" min="0" step="1" value={freePuts} onChange={(e) => setFreePuts(e.target.value)} /></label>
-        <label>每日免费抽<input type="number" min="0" step="1" value={freeDraws} onChange={(e) => setFreeDraws(e.target.value)} /></label>
+        <label>写签价格(元)<input type="number" min="0" step="0.5" value={putYuan} onChange={(e) => setPutYuan(e.target.value)} /></label>
+        <label>请签价格(元)<input type="number" min="0" step="0.5" value={drawYuan} onChange={(e) => setDrawYuan(e.target.value)} /></label>
+        <label>每日免费写<input type="number" min="0" step="1" value={freePuts} onChange={(e) => setFreePuts(e.target.value)} /></label>
+        <label>每日免费请<input type="number" min="0" step="1" value={freeDraws} onChange={(e) => setFreeDraws(e.target.value)} /></label>
       </div>
       <div className="pricing-foot">
         <span className="pricing-msg">{msg}</span>
