@@ -1,15 +1,18 @@
 {
   "name": "月老盲盒",
   "short_name": "月老盲盒",
-  "description": "存一张纸条,抽一段缘分。线上版月老盲盒。",
+  "description": "写一支签,求一段缘分。真人手写姻缘签:请中才付,未请中退香火钱。",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#8e2418",
-  "theme_color": "#8e2418",
+  "background_color": "#f8f2e4",
+  "theme_color": "#c3272b",
   "lang": "zh-CN",
-  "categories": ["social", "lifestyle"],
+  "categories": [
+    "social",
+    "lifestyle"
+  ],
   "icons": [
     {
       "src": "/icon-192.png",
