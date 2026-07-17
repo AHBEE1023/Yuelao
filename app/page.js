@@ -1,38 +1,66 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase, getDeviceId } from '../lib/supabase'
 
 const ERRORS = {
-  daily_limit: '今天的次数用完啦,明天再来碰碰运气吧~',
-  box_empty: '这个盒子暂时空啦,先存一张纸条等有缘人吧!',
-  banned_word: '内容里有不太合适的词,改一改再试试~',
+  daily_limit: '今天的缘分请完啦,明天再来求一支~',
+  box_empty: '这个签筒空了,先写一支签等有缘人吧!',
+  banned_word: '签文里有不合适的词,月老改不了,你改一改~',
   bad_age: '年龄需要在 18 ~ 99 之间哦',
   bad_length: '有的内容太长或没填,检查一下~',
   bad_input: '信息没填对,检查一下~',
   bad_device: '设备信息异常,刷新页面再试试',
-  not_drawn: '只能举报你抽到过的纸条哦',
-  not_owner: '只能撤回自己的纸条哦',
-  city_empty: '这座城市暂时还没有纸条,换个城市,或先存一张吧~',
-  no_order: '订单已失效,请重新发起~',
-  order_void: '这笔订单已失效,请重新发起~',
-  order_expired: '订单已超时,请重新发起~',
-  too_many_pending: '有未完成的订单,稍等片刻再试~',
+  not_drawn: '只能对你请到过的签这样做哦',
+  not_owner: '只能撤回自己的签哦',
+  city_empty: '这座城市的签筒还空着,换个城市,或先写一支吧~',
+  no_order: '这炷香火已失效,请重新发起~',
+  order_void: '这炷香火已失效,请重新发起~',
+  order_expired: '香火已超时,请重新发起~',
+  too_many_pending: '有未完成的香火,稍等片刻再试~',
   mock_disabled: '支付方式已切换,请刷新页面~',
   network: '网络开小差了,稍后再试~',
 }
 
-// 已抽中但还没确认收下的纸条,存在本地,防止动画期间刷新/切走导致付费结果丢失
+// 已请中但还没确认收下的签,存在本地:动画期间刷新/切走,付费结果不丢
 const PENDING_REVEAL_KEY = 'yuelao_pending_reveal'
+const GATE_KEY = 'yuelao_gate_v1'
+const RITUAL_KEY = 'yuelao_ritual_seen'
 
 function errMsg(code) {
   return ERRORS[code] || ERRORS.network
 }
 
-// 分 -> 元,去掉多余的 .00
 function yuan(fen) {
   if (!fen) return '0'
   return (fen / 100).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
+}
+
+// ---- 签诗库:揭签与每日缘分签共用;分享只带签诗,不带任何个人信息 ----
+const POEMS = [
+  { n: '第一签', a: '众里寻他千百度', b: '蓦然回首,那人正在灯火阑珊处' },
+  { n: '第七签', a: '有缘千里来相会', b: '风吹过的路口,都值得回头看看' },
+  { n: '第十二签', a: '月上柳梢头', b: '人约黄昏后,别迟到' },
+  { n: '第十七签', a: '金风玉露一相逢', b: '便胜却人间无数' },
+  { n: '第二十一签', a: '山有木兮木有枝', b: '心悦君兮,别不告诉他' },
+  { n: '第二十六签', a: '愿得一心人', b: '白首不相离' },
+  { n: '第三十三签', a: '身无彩凤双飞翼', b: '心有灵犀一点通' },
+  { n: '第三十八签', a: '陌上花开', b: '可缓缓归矣' },
+  { n: '第四十一签', a: '一眼之缘,再看是心动', b: '三看,就该开口了' },
+  { n: '第四十六签', a: '春风十里', b: '不如今天主动的你' },
+  { n: '第五十二签', a: '缘分不是等来的', b: '是你伸手,月老才好牵线' },
+  { n: '第五十八签', a: '好事多磨,磨完就是你的', b: '沉住气,别已读不回' },
+]
+const DAILY_YI = ['主动打招呼', '穿一点蓝', '发第一条消息', '约一顿饭', '把头像换亮一点', '早点睡']
+const DAILY_JI = ['已读不回', '想太多', '翻旧账', '熬夜等消息', '试探来试探去', '嘴硬']
+
+function hashStr(s) {
+  let h = 5381
+  for (let i = 0; i < (s || '').length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
+  return h
+}
+function poemFor(seed) {
+  return POEMS[hashStr(String(seed)) % POEMS.length]
 }
 
 const EMPTY_PRICING = {
@@ -52,6 +80,7 @@ const EMPTY_STATS = {
   male_cities: [],
   female_cities: [],
   my_notes: [],
+  my_hearts: 0,
 }
 
 export default function Home() {
@@ -60,10 +89,15 @@ export default function Home() {
   const [stats, setStats] = useState(EMPTY_STATS)
   const [loaded, setLoaded] = useState(false)
   const [pricing, setPricing] = useState(EMPTY_PRICING)
+  const [gateOk, setGateOk] = useState(true) // 先乐观,挂载后读本地
+  const [showGate, setShowGate] = useState(false)
+  const [showSafe, setShowSafe] = useState(false)
 
   useEffect(() => {
     setDeviceId(getDeviceId())
-    // 载入计费配置,失败重试一次;拿不到就退回默认(收银台仍会显示订单真实金额)
+    try {
+      setGateOk(!!localStorage.getItem(GATE_KEY))
+    } catch {}
     async function loadPricing(retry = true) {
       const { data, error } = await supabase.rpc('yuelao_pay_config_public')
       if (!error && data) setPricing({ ...EMPTY_PRICING, ...data })
@@ -83,94 +117,179 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId])
 
+  // 写签/请签前的准入(18+ 与敏感信息单独同意);浏览不拦
+  function requireGate(then) {
+    if (gateOk) return then()
+    setShowGate(true)
+  }
+
   return (
-    <main className="wrap">
-      <header className="hero">
-        <span className="knot">🪢</span>
-        <h1>月老盲盒</h1>
-        <p>存一张纸条 · 抽一段缘分</p>
+    <main className="app">
+      <header className="topbar">
+        <span className="brand">
+          <span className="brand-mark">缘</span>
+          月老盲盒
+        </span>
+        <button className="shield" onClick={() => setShowSafe(true)}>
+          安全
+        </button>
       </header>
 
-      <nav className="tabs">
-        <button className={tab === 'draw' ? 'active' : ''} onClick={() => setTab('draw')}>
-          抽纸条
+      <div className="page">
+        {tab === 'draw' && (
+          <DrawTab
+            deviceId={deviceId}
+            stats={stats}
+            loaded={loaded}
+            pricing={pricing}
+            onDone={refreshStats}
+            requireGate={requireGate}
+          />
+        )}
+        {tab === 'put' && (
+          <PutTab
+            deviceId={deviceId}
+            stats={stats}
+            pricing={pricing}
+            onDone={refreshStats}
+            goDraw={() => setTab('draw')}
+            requireGate={requireGate}
+          />
+        )}
+        {tab === 'mine' && (
+          <MineTab stats={stats} deviceId={deviceId} loaded={loaded} onDone={refreshStats} goPut={() => setTab('put')} />
+        )}
+
+        <footer className="disclaimer">
+          月老只负责牵线,不核实身份;凡开口谈钱,一律是骗子。
+          <br />
+          已牵起 <b className="tally">{stats.total_draws}</b> 段缘分 ·{' '}
+          <button className="linklike" onClick={() => setShowSafe(true)}>
+            安全中心
+          </button>
+        </footer>
+      </div>
+
+      <nav className="tabbar">
+        <button className={tab === 'draw' ? 'on' : ''} onClick={() => setTab('draw')}>
+          <span className="glyph">签</span>求签
         </button>
-        <button className={tab === 'put' ? 'active' : ''} onClick={() => setTab('put')}>
-          存纸条
+        <button className={tab === 'put' ? 'on' : ''} onClick={() => setTab('put')}>
+          <span className="glyph">写</span>写签
         </button>
-        <button className={tab === 'mine' ? 'active' : ''} onClick={() => { setTab('mine'); refreshStats() }}>
-          我的纸条
+        <button
+          className={tab === 'mine' ? 'on' : ''}
+          onClick={() => {
+            setTab('mine')
+            refreshStats()
+          }}
+        >
+          <span className="glyph">缘</span>我的签
         </button>
       </nav>
 
-      {tab === 'draw' && (
-        <DrawTab deviceId={deviceId} stats={stats} loaded={loaded} pricing={pricing} onDone={refreshStats} />
+      {showGate && (
+        <Gate
+          onDone={() => {
+            setGateOk(true)
+            setShowGate(false)
+          }}
+          onClose={() => setShowGate(false)}
+        />
       )}
-      {tab === 'put' && (
-        <PutTab deviceId={deviceId} stats={stats} pricing={pricing} onDone={refreshStats} goDraw={() => setTab('draw')} />
-      )}
-      {tab === 'mine' && (
-        <MineTab notes={stats.my_notes} deviceId={deviceId} loaded={loaded} onDone={refreshStats} />
-      )}
-
-      <ShareButton />
-
-      <footer className="disclaimer">
-        月老只负责牵线,不核实身份。
-        <br />
-        请勿轻信转账、投资、刷单等要求,谨防诈骗。
-        <br />
-        已牵起 <span className="tally">{stats.total_draws}</span> 段缘分
-      </footer>
+      {showSafe && <SafeSheet onClose={() => setShowSafe(false)} />}
     </main>
   )
 }
 
-function ShareButton() {
-  const [hint, setHint] = useState('')
+// ---- 准入三关:18+ 与「微信号单独同意」;拒绝不影响浏览,写签/请签必须过 ----
+function Gate({ onDone, onClose }) {
+  const [age, setAge] = useState(false)
+  const [consent, setConsent] = useState(false)
 
-  async function share() {
-    const url = typeof window !== 'undefined' ? window.location.origin : ''
-    const data = {
-      title: '月老盲盒',
-      text: '存一张纸条,抽一段缘分 🪢 快来月老盲盒碰碰运气~',
-      url,
-    }
-    // 优先用系统分享面板(手机端可直接分享到微信等)
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share(data)
-        return
-      } catch {
-        // 用户取消分享,静默处理
-        return
-      }
-    }
-    // 降级:复制链接
+  function confirm() {
+    if (!age || !consent) return
     try {
-      await navigator.clipboard.writeText(url)
-      setHint('链接已复制,发给朋友吧!')
-      setTimeout(() => setHint(''), 2500)
-    } catch {
-      setHint(url)
-    }
+      localStorage.setItem(GATE_KEY, JSON.stringify({ age18: true, consent: true, at: Date.now() }))
+    } catch {}
+    onDone()
   }
 
   return (
-    <div className="share-wrap">
-      <button className="share-btn" onClick={share}>
-        🧧 把盲盒分享给朋友
-      </button>
-      {hint && <div className="share-hint">{hint}</div>}
+    <div className="overlay" onClick={onClose}>
+      <div className="gate" onClick={(e) => e.stopPropagation()}>
+        <h2 className="f-title">进庙之前,两件事</h2>
+        <p className="gate-sub">监管的要求,也是我们自己的规矩</p>
+        <label className={`gate-item ${age ? 'ok' : ''}`}>
+          <input type="checkbox" checked={age} onChange={(e) => setAge(e.target.checked)} />
+          <span>
+            <b>我已年满 18 岁</b>
+            <i>未成年人不能使用月老盲盒</i>
+          </span>
+        </label>
+        <label className={`gate-item ${consent ? 'ok' : ''}`}>
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+          <span>
+            <b>微信号 · 单独同意</b>
+            <i>微信号属敏感个人信息:仅为「被请中后展示给对方」这一个目的加密存放,可随时撤签删除</i>
+          </span>
+        </label>
+        <p className="gate-law">依据《个人信息保护法》第 28/29 条。拒绝不影响浏览签诗,但无法写签、请签。</p>
+        <button className="btn-primary" disabled={!age || !consent} onClick={confirm}>
+          都确认了 · 进庙
+        </button>
+        <button className="linklike center" onClick={onClose}>
+          暂不同意 · 先逛逛
+        </button>
+      </div>
     </div>
   )
 }
 
-// 收银台:mock 模式下展示模拟支付;真支付接入后此处改为展示网关二维码
-function Cashier({ deviceId, order, onPaid, onClose }) {
+// ---- 安全中心:骗局案例 + 可验证的平台规则 + 反诈专线 ----
+function SafeSheet({ onClose }) {
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="safe" onClick={(e) => e.stopPropagation()}>
+        <div className="safe-head">
+          <h2 className="f-title">安全中心</h2>
+          <button className="x" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <p className="safe-sub">所有规则和处置,都摆在明面上</p>
+        <div className="safe-card">
+          <b className="danger-t">骗局案例库</b>
+          <div className="case">
+            <span className="pill rouge">杀猪盘</span>先嘘寒问暖,再带你投资/炒币——聊感情不聊钱,谈钱就举报
+          </div>
+          <div className="case">
+            <span className="pill rouge">刷单兼职</span>说带你赚钱、做任务返利的,全是托
+          </div>
+          <div className="case">
+            <span className="pill rouge">借钱应急</span>刚加上就开口借钱,一律不借,直接举报
+          </div>
+        </div>
+        <div className="safe-card green">
+          <b>平台规则(每一条都可验证)</b>
+          <ul>
+            <li>手写签文,月老逐条审核,广告微商直接拒收</li>
+            <li>每支签最多被请走 3 次,随后自动下架</li>
+            <li>微信号封存于封条之下,只有付费请中的人能看一次</li>
+            <li>3 个设备举报即自动下架;处置后退香火钱</li>
+          </ul>
+        </div>
+        <p className="hotline">涉及财产损失,请立即拨打 110 或全国反诈专线 96110</p>
+      </div>
+    </div>
+  )
+}
+
+// ---- 香火台(收银):mock 模式模拟支付;真支付接入后换网关,不改流程 ----
+function Shrine({ deviceId, order, onPaid, onClose }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const title = order.kind === 'draw' ? '抽一张纸条' : '把纸条放进盲盒'
+  const isDraw = order.kind === 'draw'
 
   async function pay() {
     if (busy) return
@@ -190,21 +309,42 @@ function Cashier({ deviceId, order, onPaid, onClose }) {
 
   return (
     <div className="overlay" onClick={busy ? undefined : onClose}>
-      <div className="cashier" onClick={(e) => e.stopPropagation()}>
-        <div className="cashier-title">{title}</div>
-        <div className="cashier-amt">
-          <span className="cashier-cur">¥</span>
-          {yuan(order.amount_fen)}
+      <div className="shrine" onClick={(e) => e.stopPropagation()}>
+        <div className="shrine-head">
+          <span className="f-title shrine-title">{isDraw ? '添香火 · 请月老抽签' : '添香火 · 托月老收签'}</span>
+          <button className="x" onClick={onClose} disabled={busy}>
+            ✕
+          </button>
         </div>
-        <div className="cashier-qr" aria-hidden="true">
-          <span>模拟收银台</span>
+        <p className="shrine-sub">
+          {isDraw ? `请一支 · ${order.gender === 'male' ? '男生签筒' : '女生签筒'}` : '把你的签放进签筒'}
+        </p>
+        <div className="incense" aria-hidden="true">
+          <i className="glow" />
+          <i className="stick s1" />
+          <i className="stick s2" />
+          <i className="stick s3" />
+          <i className="bowl-top" />
+          <i className="bowl" />
         </div>
-        <p className="cashier-note">当前为测试收银台(模拟支付),不会真实扣款。</p>
-        <button className="btn submit-btn cashier-pay" onClick={pay} disabled={busy}>
-          {busy ? '支付中…' : `模拟支付 ¥${yuan(order.amount_fen)}`}
+        <div className="shrine-amt">
+          <span className="cur f-title">¥</span>
+          <span className="num f-title">{yuan(order.amount_fen)}</span>
+        </div>
+        <div className="wyg">
+          <b>你将获得</b>
+          <p>
+            {isDraw
+              ? '随机请走 1 支真人手写签,请中才见微信;不会请到自己或请过的人;筒空自动退香火钱。'
+              : '你的签放进签筒,被请走时对方才能看到微信;可随时在「我的签」撤回。'}
+          </p>
+        </div>
+        <p className="fair">请中才付 · 未请中自动退 · 当前为模拟支付,不会真实扣款</p>
+        <button className="btn-primary" onClick={pay} disabled={busy}>
+          {busy ? '香火点燃中…' : `敬上香火 · ¥${yuan(order.amount_fen)}`}
         </button>
         {err && <p className="err">{err}</p>}
-        <button className="btn btn-plain cashier-cancel" onClick={onClose} disabled={busy}>
+        <button className="linklike center" onClick={onClose} disabled={busy}>
           取消
         </button>
       </div>
@@ -212,29 +352,78 @@ function Cashier({ deviceId, order, onPaid, onClose }) {
   )
 }
 
-function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
-  const [shaking, setShaking] = useState(null) // 'male' | 'female' — 摇盒
-  const [opening, setOpening] = useState(null) // 'male' | 'female' — 开盖那一拍
+// ---- 每日缘分签:永远免费,分享只带签诗 ----
+function DailySign({ deviceId }) {
+  const [hint, setHint] = useState('')
+  const today = new Date()
+  const dayKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`
+  const seed = hashStr(dayKey + (deviceId || ''))
+  const poem = POEMS[seed % POEMS.length]
+  const score = 60 + (seed % 40)
+  const yi1 = DAILY_YI[seed % DAILY_YI.length]
+  const yi2 = DAILY_YI[hashStr(dayKey + 'yi2' + (deviceId || '')) % DAILY_YI.length]
+  const ji1 = DAILY_JI[hashStr(dayKey + 'ji' + (deviceId || '')) % DAILY_JI.length]
+
+  async function share() {
+    const text = `【月老盲盒 · 今日缘分签】\n${poem.a},${poem.b}。\n今日爱情运 ${score}/100 · 宜:${yi1} · 忌:${ji1}\n${typeof window !== 'undefined' ? window.location.origin : ''}`
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: '今日缘分签', text })
+        return
+      } catch {
+        return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setHint('签诗已复制,发给朋友吧(不含任何个人信息)')
+      setTimeout(() => setHint(''), 2500)
+    } catch {}
+  }
+
+  return (
+    <div className="daily">
+      <div className="daily-head">
+        <b>今日缘分签</b>
+        <span>免费 · 不扣香火钱</span>
+      </div>
+      <div className="daily-poem f-title">{poem.a}</div>
+      <div className="daily-luck">
+        今日爱情运 <b className="f-title">{score}</b> / 100
+      </div>
+      <div className="daily-tags">
+        <span className="pill green">宜 · {yi1}</span>
+        {yi2 !== yi1 && <span className="pill blue">宜 · {yi2}</span>}
+        <span className="pill rouge">忌 · {ji1}</span>
+      </div>
+      <button className="btn-ghost" onClick={share}>
+        分享今日签诗卡(不含个人信息)
+      </button>
+      {hint && <div className="share-hint">{hint}</div>}
+    </div>
+  )
+}
+
+// ---- 求签(首页)----
+function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate }) {
+  const [shaking, setShaking] = useState(null) // 'male' | 'female'
   const [note, setNote] = useState(null)
   const [toast, setToast] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [reporting, setReporting] = useState(false)
-  const [reported, setReported] = useState(false)
   const [city, setCity] = useState('')
-  const [cashier, setCashier] = useState(null) // 待支付的抽取订单
-  const [pending, setPending] = useState(false) // 正在创建订单
+  const [cashier, setCashier] = useState(null)
+  const [pending, setPending] = useState(false)
+  const [ritualSeen, setRitualSeen] = useState(false)
+  const [skipNow, setSkipNow] = useState(false)
 
   const outOfDraws = loaded && stats.draws_left <= 0
   const drawFen = pricing.draw_fen
 
-  // 恢复:若上次抽中的纸条因刷新/切走未及展示,重新弹出(付费结果不丢)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(PENDING_REVEAL_KEY)
       if (saved) setNote(JSON.parse(saved))
-    } catch {
-      // 解析失败忽略
-    }
+      setRitualSeen(!!localStorage.getItem(RITUAL_KEY))
+    } catch {}
   }, [])
 
   function dismissNote() {
@@ -244,61 +433,61 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
     setNote(null)
   }
 
-  // 两个盒子里出现过的城市并集,供筛选下拉;保持出现顺序(按数量已在后端排序)
   const cities = []
   for (const c of [...(stats.male_cities || []), ...(stats.female_cities || [])]) {
     if (c && !cities.includes(c)) cities.push(c)
   }
-  // 选中的城市若因数据变化已不存在,回退到"全部"
   const activeCity = cities.includes(city) ? city : ''
 
-  // 摇盒 → 开盖 → 揭晓纸条的仪式动画
+  // 摇筒 → 揭签:结果先落盘,动画只是播放
   function revealCeremony(gender, drawnNote) {
-    // 立即落盘:动画期间即使刷新/切走,付费抽中的纸条也不会丢
     try {
       localStorage.setItem(PENDING_REVEAL_KEY, JSON.stringify(drawnNote))
+      localStorage.setItem(RITUAL_KEY, '1')
     } catch {}
+    setSkipNow(false)
     setShaking(gender)
-    setTimeout(() => {
+    const t = setTimeout(() => {
       setShaking(null)
-      setCopied(false)
-      setReporting(false)
-      setReported(false)
-      setOpening(gender)
-      setTimeout(() => {
-        setOpening(null)
-        setNote(drawnNote)
-        onDone()
-      }, 240)
+      setNote(drawnNote)
+      onDone()
     }, 800)
+    // 跳过仪式:立即揭
+    if (skipRef) skipRef.cancel = () => {
+      clearTimeout(t)
+      setShaking(null)
+      setNote(drawnNote)
+      onDone()
+    }
   }
+  const skipRef = useMemo(() => ({ cancel: null }), [])
 
   async function draw(gender) {
-    if (!deviceId || shaking || opening || pending || cashier) return
+    if (!deviceId || shaking || pending || cashier) return
     if (outOfDraws) {
       setToast(errMsg('daily_limit'))
       return
     }
-    setToast('')
-    setPending(true)
-    const { data, error } = await supabase.rpc('yuelao_create_order', {
-      p_device_id: deviceId,
-      p_kind: 'draw',
-      p_gender: gender,
-      p_city: activeCity || null,
+    requireGate(async () => {
+      setToast('')
+      setPending(true)
+      const { data, error } = await supabase.rpc('yuelao_create_order', {
+        p_device_id: deviceId,
+        p_kind: 'draw',
+        p_gender: gender,
+        p_city: activeCity || null,
+      })
+      setPending(false)
+      if (error || !data) {
+        setToast(errMsg('network'))
+      } else if (!data.ok) {
+        setToast(errMsg(data.error))
+      } else if (data.done) {
+        revealCeremony(gender, data.note)
+      } else {
+        setCashier({ ...data, gender })
+      }
     })
-    setPending(false)
-    if (error || !data) {
-      setToast(errMsg('network'))
-    } else if (!data.ok) {
-      setToast(errMsg(data.error))
-    } else if (data.done) {
-      // 免费额度:直接揭晓
-      revealCeremony(gender, data.note)
-    } else {
-      // 需要付费:打开收银台,支付成功后再揭晓
-      setCashier({ ...data, gender })
-    }
   }
 
   function onDrawPaid(data) {
@@ -312,13 +501,167 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
     revealCeremony(gender, data.note)
   }
 
+  const maleEmpty = loaded && stats.male === 0
+  const femaleEmpty = loaded && stats.female === 0
+
+  return (
+    <section className="draw">
+      <div className="plaques" aria-hidden="true">
+        <i className="pl p1">
+          <em className="f-hand">求良缘</em>
+        </i>
+        <i className="pl p2">
+          <em className="f-hand">盼相遇</em>
+        </i>
+        <i className="pl p3">
+          <em className="f-hand">愿心安</em>
+        </i>
+      </div>
+
+      <div className="lead">
+        <h1 className="f-title">求一支姻缘签</h1>
+        <p>签筒里都是真人手写的纸条,月老逐条审过</p>
+      </div>
+
+      {cities.length > 0 && (
+        <div className="city-filter">
+          <span>同城缘分</span>
+          <select value={activeCity} onChange={(e) => setCity(e.target.value)}>
+            <option value="">全部城市</option>
+            {cities.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="altar">
+        <Tong
+          gender="male"
+          label="男生签筒"
+          count={stats.male}
+          loaded={loaded}
+          empty={maleEmpty}
+          shaking={shaking === 'male'}
+          disabled={outOfDraws || pending}
+          onClick={() => draw('male')}
+        />
+        <Tong
+          gender="female"
+          label="女生签筒"
+          count={stats.female}
+          loaded={loaded}
+          empty={femaleEmpty}
+          shaking={shaking === 'female'}
+          disabled={outOfDraws || pending}
+          onClick={() => draw('female')}
+        />
+        <i className="slab" aria-hidden="true" />
+      </div>
+
+      {shaking && ritualSeen && !skipNow && (
+        <button
+          className="skip-ritual"
+          onClick={() => {
+            setSkipNow(true)
+            skipRef.cancel && skipRef.cancel()
+          }}
+        >
+          跳过仪式
+        </button>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <p className="rule-line">
+        {outOfDraws ? (
+          <>今天的缘分请完啦,明天再来~</>
+        ) : (
+          <>
+            {drawFen > 0 && (
+              <>
+                请签 <b>¥{yuan(drawFen)}</b> ·{' '}
+              </>
+            )}
+            今日还可请 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会重复请到同一人
+          </>
+        )}
+      </p>
+      {pricing.free_draws_per_day > 0 && !outOfDraws && (
+        <p className="free-pill">
+          <i />每日前 {pricing.free_draws_per_day} 次免费 · 未请中自动退香火钱
+        </p>
+      )}
+
+      <div className="trust">
+        <div className="trust-list">
+          <span>每支签最多被请走 3 次,随后自动下架</span>
+          <span>手写签文 · 月老逐条审核,广告微商直接拒收</span>
+          <span>凡开口谈钱一律是骗子 · 一键举报即封</span>
+        </div>
+        <i className="stamp f-title" aria-hidden="true">
+          月老
+          <br />
+          已审
+        </i>
+      </div>
+
+      <DailySign deviceId={deviceId} />
+
+      {cashier && <Shrine deviceId={deviceId} order={cashier} onPaid={onDrawPaid} onClose={() => setCashier(null)} />}
+
+      {note && <Reveal note={note} deviceId={deviceId} drawFen={drawFen} onClose={dismissNote} onDrawAgain={draw} />}
+    </section>
+  )
+}
+
+function Tong({ gender, label, count, loaded, empty, shaking, disabled, onClick }) {
+  return (
+    <button
+      className={`tong ${gender} ${shaking ? 'shaking' : ''} ${empty ? 'empty' : ''}`}
+      onClick={onClick}
+      disabled={disabled || empty}
+    >
+      <span className="sticks" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="tong-rim" aria-hidden="true" />
+      <span className="tong-body" aria-hidden="true" />
+      <span className="tong-band f-title">{label}</span>
+      <span className="tong-count">
+        {!loaded ? (
+          <span className="skeleton count-skel" aria-label="清点中" />
+        ) : empty ? (
+          '筒空了 · 明日再来'
+        ) : (
+          `${count} 支签在筒里`
+        )}
+      </span>
+    </button>
+  )
+}
+
+// ---- 揭签:签诗 → 手写签 → 封条(反诈叮咛)→ 撕开 → 复制 → 变身再求一支 ----
+function Reveal({ note, deviceId, drawFen, onClose, onDrawAgain }) {
+  const [stage, setStage] = useState('sealed') // sealed | oath | open
+  const [copied, setCopied] = useState(false)
+  const [reporting, setReporting] = useState(false)
+  const [reported, setReported] = useState(false)
+  const [hearted, setHearted] = useState(false)
+  const [hint, setHint] = useState('')
+  const poem = poemFor(note.id)
+
   async function copyContact() {
     try {
       await navigator.clipboard.writeText(note.contact)
       setCopied(true)
-    } catch {
-      // 部分浏览器限制剪贴板,用户可手动长按复制
-    }
+    } catch {}
   }
 
   async function report(reason) {
@@ -330,161 +673,181 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone }) {
     if (data?.ok) {
       setReported(true)
       setReporting(false)
+      setHint('已举报。核实后将下架并退香火钱。')
+      setTimeout(() => setHint(''), 3000)
     }
   }
 
+  async function heart() {
+    if (hearted) return
+    const { data } = await supabase.rpc('yuelao_heart_signal', {
+      p_device_id: deviceId,
+      p_note_id: note.id,
+    })
+    if (data?.ok) {
+      setHearted(true)
+      setHint('心动信号已回传,TA 会知道红线接上了')
+      setTimeout(() => setHint(''), 3000)
+    }
+  }
+
+  async function sharePoem() {
+    const text = `【月老盲盒 · 姻缘签 · ${poem.n}】\n${poem.a},${poem.b}。\n${typeof window !== 'undefined' ? window.location.origin : ''}`
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: '姻缘签', text })
+        return
+      } catch {
+        return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setHint('签诗已复制(不含任何个人信息)')
+      setTimeout(() => setHint(''), 2500)
+    } catch {}
+  }
+
+  function drawAgain() {
+    const g = note.gender
+    onClose()
+    setTimeout(() => onDrawAgain(g), 60)
+  }
+
   return (
-    <section>
-      {cities.length > 0 && (
-        <div className="city-filter">
-          <span>抽取范围</span>
-          <select value={activeCity} onChange={(e) => setCity(e.target.value)}>
-            <option value="">全部城市</option>
-            {cities.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div className="boxes">
-        <button
-          className={`box ${shaking === 'male' ? 'shaking' : ''} ${opening === 'male' ? 'opening' : ''}`}
-          onClick={() => draw('male')}
-          disabled={outOfDraws}
-        >
-          <span className="box-lid" aria-hidden="true" />
-          <span className="box-ribbon" aria-hidden="true" />
-          <span className="box-knot" aria-hidden="true" />
-          <span className="box-inner">
-            <span className="emoji">💙</span>
-            <h3>男生盒</h3>
-            <div className="count">
-              {loaded ? `${stats.male} 张纸条在等待` : <span className="skeleton count-skel" aria-label="清点中" />}
-            </div>
-          </span>
-        </button>
-        <button
-          className={`box ${shaking === 'female' ? 'shaking' : ''} ${opening === 'female' ? 'opening' : ''}`}
-          onClick={() => draw('female')}
-          disabled={outOfDraws}
-        >
-          <span className="box-lid" aria-hidden="true" />
-          <span className="box-ribbon" aria-hidden="true" />
-          <span className="box-knot" aria-hidden="true" />
-          <span className="box-inner">
-            <span className="emoji">❤️</span>
-            <h3>女生盒</h3>
-            <div className="count">
-              {loaded ? `${stats.female} 张纸条在等待` : <span className="skeleton count-skel" aria-label="清点中" />}
-            </div>
-          </span>
-        </button>
+    <div className="overlay" onClick={onClose}>
+      <div className="stickhead" aria-hidden="true">
+        <i className="knob" />
+        <i className="shaft" />
       </div>
+      <div className="scroll" onClick={(e) => e.stopPropagation()}>
+        <i className="stamp corner f-title" aria-hidden="true">
+          月老
+          <br />
+          已审
+        </i>
+        <div className="qh">姻缘签 · {poem.n}</div>
+        <div className="poem f-title">{poem.a}</div>
+        <div className="poem-b">{poem.b}</div>
+        <div className="scroll-div" />
+        <div className="who">
+          <b className="f-hand">{note.nickname}</b>
+          <span>
+            {note.age} 岁 · {note.city}
+            {note.seeking ? ` · 想认识${note.seeking === 'male' ? '男生' : '女生'}` : ''}
+          </span>
+        </div>
+        {note.hobbies && <p className="hand f-hand">爱好 · {note.hobbies}</p>}
+        {note.message && <p className="hand quote f-hand">「{note.message}」</p>}
 
-      {toast && <div className="toast">{toast}</div>}
-
-      <p className="hint">
-        {outOfDraws ? (
-          <>今天的缘分抽完啦,明天再来~</>
-        ) : (
+        {stage === 'sealed' && (
           <>
-            点一下盒子,月老为你抽一张
-            {activeCity ? <b> {activeCity} </b> : '的'}纸条
-            <br />
-            {drawFen > 0 && <>每抽一张 <b>¥{yuan(drawFen)}</b> · </>}
-            今日还可抽 <b>{loaded ? stats.draws_left : 5}</b> 次 · 不会抽到重复的人
+            <div className="seal-strip">
+              <b className="f-title">封</b>
+              <i />
+              微信号封存于此 · 撕开可见
+            </div>
+            <p className="warn">撕开前请记住:凡开口谈钱,一律是骗子</p>
+            <button className="btn-primary" onClick={() => setStage('oath')}>
+              撕开封条 · 见微信
+            </button>
           </>
         )}
-      </p>
 
-      {cashier && (
-        <Cashier
-          deviceId={deviceId}
-          order={cashier}
-          onPaid={onDrawPaid}
-          onClose={() => setCashier(null)}
-        />
-      )}
-
-      {note && (
-        <div className="overlay" onClick={dismissNote}>
-          <div className="confetti" aria-hidden="true">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <i
-                key={i}
-                className="confetti-bit"
-                style={{
-                  left: `${(i * 8.3 + 5) % 100}%`,
-                  '--dur': `${1.05 + (i % 4) * 0.18}s`,
-                  '--delay': `${(i % 6) * 0.05}s`,
-                  '--rot': `${(i % 2 ? 1 : -1) * (140 + i * 20)}deg`,
-                  '--drift': `${(i % 2 ? 1 : -1) * (12 + (i % 3) * 9)}px`,
-                }}
-              />
-            ))}
+        {stage === 'oath' && (
+          <div className="oath">
+            <b>月老只说一次:</b>
+            <p>
+              谈到<b>转账、投资、刷单、借钱</b>,不管理由多动人,一律是诈骗——立即停手,回来举报,香火钱退你。
+            </p>
+            <button className="btn-primary" onClick={() => setStage('open')}>
+              我已记下 · 解封
+            </button>
           </div>
-          <div className="note-card" onClick={(e) => e.stopPropagation()}>
-            <span className="note-seal" aria-hidden="true">缘</span>
-            <div className="top">
-              <h2>{note.nickname}</h2>
-              <span className="meta">
-                {note.age} 岁 · {note.city}
-              </span>
+        )}
+
+        {stage === 'open' && (
+          <>
+            <div className="torn" aria-hidden="true">
+              <i className="half l" />
+              <i className="half r" />
             </div>
-            {note.hobbies && (
-              <div className="field">
-                <b>爱好</b>
-                {note.hobbies}
-              </div>
-            )}
-            {note.message && (
-              <div className="field">
-                <b>留言</b>
-                {note.message}
-              </div>
-            )}
-            <div className="contact-row">
-              <span className="cid">{note.contact}</span>
-              <button className={`btn btn-red${copied ? ' copied' : ''}`} onClick={copyContact}>
-                {copied ? '✓ 已复制' : '复制微信'}
+            <div className="confetti" aria-hidden="true">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <i
+                  key={i}
+                  className="confetti-bit"
+                  style={{
+                    left: `${(i * 8.3 + 5) % 100}%`,
+                    '--dur': `${1.05 + (i % 4) * 0.18}s`,
+                    '--delay': `${(i % 6) * 0.05}s`,
+                    '--rot': `${(i % 2 ? 1 : -1) * (140 + i * 20)}deg`,
+                    '--drift': `${(i % 2 ? 1 : -1) * (12 + (i % 3) * 9)}px`,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="contact-box">
+              <span className="clabel">TA 的微信</span>
+              <b className="cid f-hand">{note.contact}</b>
+              {copied ? (
+                <button className="btn-primary morph" onClick={drawAgain}>
+                  再求一支{drawFen > 0 ? ` · ¥${yuan(drawFen)}` : ''}
+                </button>
+              ) : (
+                <button className="btn-primary" onClick={copyContact}>
+                  复制微信号
+                </button>
+              )}
+              {copied && <span className="copied-tip">✓ 已复制</span>}
+            </div>
+            <p className="warn">凡开口谈钱,一律是骗子 · 有异常一键举报</p>
+            <div className="heart-box">
+              <b>加上好友了?</b>
+              <p>回传一个匿名心动信号,写签的人会知道红线接上了。</p>
+              <button className={`btn-ghost rouge ${hearted ? 'done' : ''}`} onClick={heart} disabled={hearted}>
+                {hearted ? '✓ 心动信号已回传' : '已添加 · 回传心动信号'}
               </button>
             </div>
-            <p className="safety">⚠️ 添加好友后注意保护隐私,涉及金钱一律是骗子。</p>
+            <button className="linklike center" onClick={sharePoem}>
+              把这支签的签诗做成卡片分享 ›(不含任何个人信息)
+            </button>
+          </>
+        )}
 
-            {reporting ? (
-              <div className="report-box">
-                <span className="report-title">这张纸条哪里不对?</span>
-                <div className="report-reasons">
-                  {['广告推广', '虚假信息', '骚扰不适', '其他'].map((r) => (
-                    <button key={r} className="btn btn-plain reason" onClick={() => report(r)}>
-                      {r}
-                    </button>
-                  ))}
-                </div>
-                <button className="btn btn-plain" onClick={() => setReporting(false)}>
-                  取消
-                </button>
+        {hint && <div className="share-hint">{hint}</div>}
+
+        <div className="scroll-foot">
+          {reporting ? (
+            <div className="report-box">
+              <span className="report-title">这支签哪里不对?</span>
+              <div className="report-reasons">
+                {['广告推广', '虚假信息', '骚扰不适', '其他'].map((r) => (
+                  <button key={r} className="btn-ghost sm" onClick={() => report(r)}>
+                    {r}
+                  </button>
+                ))}
               </div>
-            ) : (
-              <div className="card-actions">
-                <button
-                  className="btn btn-plain"
-                  onClick={() => setReporting(true)}
-                  disabled={reported}
-                >
-                  {reported ? '已举报,谢谢' : '举报此纸条'}
-                </button>
-                <button className="btn btn-red" onClick={dismissNote}>
-                  收下这段缘分
-                </button>
-              </div>
-            )}
-          </div>
+              <button className="linklike" onClick={() => setReporting(false)}>
+                取消
+              </button>
+            </div>
+          ) : (
+            <>
+              <button className="linklike" onClick={() => setReporting(true)} disabled={reported}>
+                {reported ? '已举报,谢谢' : '举报此签'}
+              </button>
+              {typeof note.draw_count === 'number' && (
+                <span className="draw-quota">这支签已被请走 {Math.min(note.draw_count, 3)}/3 次</span>
+              )}
+              <button className="linklike strong" onClick={onClose}>
+                收下这段缘分
+              </button>
+            </>
+          )}
         </div>
-      )}
-    </section>
+      </div>
+    </div>
   )
 }
 
@@ -499,12 +862,13 @@ const EMPTY_FORM = {
   message: '',
 }
 
-function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
+// ---- 写签 ----
+function PutTab({ deviceId, stats, pricing, onDone, goDraw, requireGate }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(false)
-  const [cashier, setCashier] = useState(null) // 待支付的存入订单
+  const [cashier, setCashier] = useState(null)
 
   const putFen = pricing.put_fen
 
@@ -515,35 +879,35 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
   async function submit(e) {
     e.preventDefault()
     if (busy || !deviceId || cashier) return
-    setErr('')
-    setBusy(true)
-    const { data, error } = await supabase.rpc('yuelao_create_order', {
-      p_device_id: deviceId,
-      p_kind: 'put',
-      p_payload: {
-        gender: form.gender,
-        seeking: form.seeking,
-        nickname: form.nickname.trim(),
-        age: parseInt(form.age, 10) || 0,
-        city: form.city.trim(),
-        hobbies: form.hobbies.trim(),
-        contact: form.contact.trim(),
-        message: form.message.trim(),
-      },
+    requireGate(async () => {
+      setErr('')
+      setBusy(true)
+      const { data, error } = await supabase.rpc('yuelao_create_order', {
+        p_device_id: deviceId,
+        p_kind: 'put',
+        p_payload: {
+          gender: form.gender,
+          seeking: form.seeking,
+          nickname: form.nickname.trim(),
+          age: parseInt(form.age, 10) || 0,
+          city: form.city.trim(),
+          hobbies: form.hobbies.trim(),
+          contact: form.contact.trim(),
+          message: form.message.trim(),
+        },
+      })
+      setBusy(false)
+      if (error || !data) {
+        setErr(errMsg('network'))
+      } else if (!data.ok) {
+        setErr(errMsg(data.error))
+      } else if (data.done) {
+        setDone(true)
+        onDone()
+      } else {
+        setCashier(data)
+      }
     })
-    setBusy(false)
-    if (error || !data) {
-      setErr(errMsg('network'))
-    } else if (!data.ok) {
-      setErr(errMsg(data.error))
-    } else if (data.done) {
-      // 免费额度:直接成功
-      setDone(true)
-      onDone()
-    } else {
-      // 需要付费:打开收银台
-      setCashier(data)
-    }
   }
 
   function onPutPaid(data) {
@@ -558,47 +922,57 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
 
   if (done) {
     return (
-      <div className="form-card ok-panel">
-        <span className="emoji">🧧</span>
-        <h2>纸条已放进盒子!</h2>
+      <div className="letter ok-panel">
+        <i className="hangline" aria-hidden="true" />
+        <span className="ok-knot" aria-hidden="true" />
+        <h2 className="f-title">你的红线已挂上</h2>
         <p>
-          月老已经把你的纸条收好啦,
+          月老已把你的签收进筒里。
           <br />
-          等有缘人抽中就能联系你。
+          被请走时,对方才能看到你的微信;
           <br />
-          可以在「我的纸条」里看它被抽了几次。
+          有人回传心动信号,「我的签」会告诉你。
         </p>
         <button
-          className="btn btn-red"
-          style={{ marginTop: 16 }}
+          className="btn-primary"
           onClick={() => {
             setDone(false)
             setForm(EMPTY_FORM)
             goDraw()
           }}
         >
-          我也去抽一张
+          我也去求一支
         </button>
       </div>
     )
   }
 
   return (
-    <form className="form-card" onSubmit={submit}>
-      <h2>把自己放进盲盒 💌</h2>
+    <form className="letter" onSubmit={submit}>
+      <h2 className="f-title">写一支自己的签</h2>
       <p className="sub">
-        {putFen > 0 && <>存一张 ¥{yuan(putFen)} · </>}
-        今日还可存 {stats.puts_left} 张 · 联系方式只有抽中的人能看到
+        {putFen > 0 && (
+          <>
+            写一支 <b>¥{yuan(putFen)}</b> ·{' '}
+          </>
+        )}
+        今日还可写 {stats.puts_left} 支 · 手写你的真心,月老替你封存
       </p>
 
-      <div className="row2">
+      <div className="privcard">🔒 不公开 · 不可爬 · 满 3 次自动下架 · 随时可撤签</div>
+
+      <div className="seg-row">
         <div className="fgroup">
           <label>我是</label>
           <div className="seg">
-            <button type="button" className={form.gender === 'male' ? 'on' : ''} onClick={() => set('gender', 'male')}>
+            <button type="button" className={form.gender === 'male' ? 'on m' : ''} onClick={() => set('gender', 'male')}>
               男生
             </button>
-            <button type="button" className={form.gender === 'female' ? 'on' : ''} onClick={() => set('gender', 'female')}>
+            <button
+              type="button"
+              className={form.gender === 'female' ? 'on f' : ''}
+              onClick={() => set('gender', 'female')}
+            >
               女生
             </button>
           </div>
@@ -606,67 +980,115 @@ function PutTab({ deviceId, stats, pricing, onDone, goDraw }) {
         <div className="fgroup">
           <label>想认识</label>
           <div className="seg">
-            <button type="button" className={form.seeking === 'male' ? 'on' : ''} onClick={() => set('seeking', 'male')}>
+            <button type="button" className={form.seeking === 'male' ? 'on m' : ''} onClick={() => set('seeking', 'male')}>
               男生
             </button>
-            <button type="button" className={form.seeking === 'female' ? 'on' : ''} onClick={() => set('seeking', 'female')}>
+            <button
+              type="button"
+              className={form.seeking === 'female' ? 'on f' : ''}
+              onClick={() => set('seeking', 'female')}
+            >
               女生
             </button>
           </div>
         </div>
       </div>
 
-      <div className="row2">
-        <div className="fgroup">
+      <div className="lrow2">
+        <div className="lrow">
           <label>昵称</label>
-          <input value={form.nickname} onChange={(e) => set('nickname', e.target.value)} maxLength={20} placeholder="怎么称呼你" required />
+          <input
+            className="f-hand"
+            value={form.nickname}
+            onChange={(e) => set('nickname', e.target.value)}
+            maxLength={20}
+            placeholder="怎么称呼你"
+            required
+          />
         </div>
-        <div className="fgroup">
+        <div className="lrow">
           <label>年龄</label>
-          <input value={form.age} onChange={(e) => set('age', e.target.value)} type="number" min={18} max={99} placeholder="18+" required />
+          <input
+            className="f-hand"
+            value={form.age}
+            onChange={(e) => set('age', e.target.value)}
+            type="number"
+            min={18}
+            max={99}
+            placeholder="18+"
+            required
+          />
         </div>
       </div>
 
-      <div className="fgroup">
+      <div className="lrow">
         <label>城市</label>
-        <input value={form.city} onChange={(e) => set('city', e.target.value)} maxLength={20} placeholder="你在哪座城市" required />
+        <input
+          className="f-hand"
+          value={form.city}
+          onChange={(e) => set('city', e.target.value)}
+          maxLength={20}
+          placeholder="你在哪座城市"
+          required
+        />
       </div>
 
-      <div className="fgroup">
+      <div className="lrow hl">
         <label>微信号</label>
-        <input value={form.contact} onChange={(e) => set('contact', e.target.value)} maxLength={50} placeholder="抽中你的人会看到" required />
+        <input
+          className="f-hand"
+          value={form.contact}
+          onChange={(e) => set('contact', e.target.value)}
+          maxLength={50}
+          placeholder="封存于封条之下"
+          required
+        />
+        <i className="lnote">仅请中你的人可见 · 可随时撤签删除</i>
       </div>
 
-      <div className="fgroup">
+      <div className="lrow">
         <label>爱好(选填)</label>
-        <input value={form.hobbies} onChange={(e) => set('hobbies', e.target.value)} maxLength={60} placeholder="爬山、看展、打游戏…" />
+        <input
+          className="f-hand"
+          value={form.hobbies}
+          onChange={(e) => set('hobbies', e.target.value)}
+          maxLength={60}
+          placeholder="爬山、看展、打游戏…"
+        />
       </div>
 
-      <div className="fgroup">
+      <div className="lrow">
         <label>想说的话(选填)</label>
-        <textarea value={form.message} onChange={(e) => set('message', e.target.value)} maxLength={140} rows={3} placeholder="给抽到这张纸条的人留句话吧" />
+        <textarea
+          className="f-hand"
+          value={form.message}
+          onChange={(e) => set('message', e.target.value)}
+          maxLength={140}
+          rows={3}
+          placeholder="给请到这支签的人留句话吧"
+        />
       </div>
 
-      <button className="btn submit-btn" disabled={busy}>
-        {busy ? '处理中…' : putFen > 0 ? `放进盲盒 · ¥${yuan(putFen)}` : '放进盲盒'}
+      {form.nickname.trim() && <p className="sign-off f-hand">—— 落款 · {form.nickname.trim()}</p>}
+
+      <button className="btn-primary seal-btn" disabled={busy}>
+        <i className="seal-sq f-title">印</i>
+        {busy ? '封存中…' : putFen > 0 ? `盖印投筒 · ¥${yuan(putFen)}` : '盖印投筒'}
       </button>
       {err && <p className="err">{err}</p>}
 
-      {cashier && (
-        <Cashier
-          deviceId={deviceId}
-          order={cashier}
-          onPaid={onPutPaid}
-          onClose={() => setCashier(null)}
-        />
-      )}
+      {cashier && <Shrine deviceId={deviceId} order={cashier} onPaid={onPutPaid} onClose={() => setCashier(null)} />}
     </form>
   )
 }
 
-function MineTab({ notes, deviceId, loaded, onDone }) {
+// ---- 我的签 · 缘分簿 ----
+function MineTab({ stats, deviceId, loaded, onDone, goPut }) {
   const [busyId, setBusyId] = useState(null)
   const [confirmId, setConfirmId] = useState(null)
+  const notes = stats.my_notes || []
+  const totalDraws = notes.reduce((s, n) => s + (n.draw_count || 0), 0)
+  const hearts = stats.my_hearts || 0
 
   async function withdraw(id) {
     setBusyId(id)
@@ -688,54 +1110,79 @@ function MineTab({ notes, deviceId, loaded, onDone }) {
       </div>
     )
   }
-  if (!notes || notes.length === 0) {
+  if (notes.length === 0) {
     return (
       <div className="empty">
         <span className="empty-art">💌</span>
-        <div className="empty-title">你还没有存过纸条</div>
-        <div className="empty-sub">去「存纸条」把自己放进盲盒吧</div>
+        <div className="empty-title">你还没有交给月老一支签</div>
+        <div className="empty-sub">写下自己,才有人能请到你</div>
+        <button className="btn-primary" style={{ marginTop: 14 }} onClick={goPut}>
+          去写一支签
+        </button>
       </div>
     )
   }
   return (
-    <section>
-      {notes.map((n) => (
-        <div className="mine-item" key={n.id}>
-          <div className="mine-main">
-            <div className="name">
-              {n.nickname}
-              <span className="tag">{n.gender === 'male' ? '男生盒' : '女生盒'}</span>
-            </div>
-            <div className="sub">
-              {new Date(n.created_at).toLocaleDateString('zh-CN')} 放入
-              {n.status === 'hidden' && <span className="status-pill hidden">已下架</span>}
-            </div>
-          </div>
-          <div className="mine-right">
-            <div className="badge">被抽走 {n.draw_count} 次</div>
-            {n.status === 'active' &&
-              (confirmId === n.id ? (
-                <div className="confirm-row">
-                  <button
-                    className="btn-tiny danger"
-                    onClick={() => withdraw(n.id)}
-                    disabled={busyId === n.id}
-                  >
-                    {busyId === n.id ? '撤回中' : '确认撤回'}
-                  </button>
-                  <button className="btn-tiny" onClick={() => setConfirmId(null)}>
-                    取消
-                  </button>
-                </div>
-              ) : (
-                <button className="btn-tiny" onClick={() => setConfirmId(n.id)}>
-                  撤回
-                </button>
-              ))}
-          </div>
+    <section className="mine">
+      <h2 className="f-title mine-title">我的签 · 缘分簿</h2>
+      <div className="receipt">
+        <div className="receipt-line">
+          你的红线被牵起 <b className="f-title">{totalDraws}</b> 次
         </div>
-      ))}
-      <p className="mine-note">撤回后纸条不再出现在盒子里,当日存放次数不会返还。</p>
+        <div className="receipt-sub">
+          {hearts > 0 ? (
+            <>
+              <i className="dot" />其中 <b>{hearts}</b> 人向你回传了心动信号,留意微信好友申请
+            </>
+          ) : totalDraws > 0 ? (
+            '有人读过你的签,缘分在路上了'
+          ) : (
+            '等第一个人来请你的签'
+          )}
+        </div>
+      </div>
+
+      {notes.map((n) => {
+        const full = (n.draw_count || 0) >= 3
+        return (
+          <div className="signitem" key={n.id}>
+            <div className="si-main">
+              <div className="name">
+                <b className="f-hand">{n.nickname}</b>
+                <span className={`pill ${n.gender === 'male' ? 'blue' : 'rouge'}`}>
+                  {n.gender === 'male' ? '男生签筒' : '女生签筒'}
+                </span>
+                {n.status === 'hidden' && <span className="pill gray">已下架</span>}
+              </div>
+              <div className="sub">{new Date(n.created_at).toLocaleDateString('zh-CN')} 投入</div>
+            </div>
+            <div className="si-right">
+              <span className="pill gold">
+                被请走 {Math.min(n.draw_count || 0, 3)}/3{full ? ' · 已请满' : ''}
+              </span>
+              {(n.hearts || 0) > 0 && <span className="pill rouge">心动 ×{n.hearts}</span>}
+              {n.status === 'active' &&
+                (confirmId === n.id ? (
+                  <div className="confirm-row">
+                    <button className="btn-tiny danger" onClick={() => withdraw(n.id)} disabled={busyId === n.id}>
+                      {busyId === n.id ? '撤签中' : '确认撤签'}
+                    </button>
+                    <button className="btn-tiny" onClick={() => setConfirmId(null)}>
+                      取消
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn-tiny" onClick={() => setConfirmId(n.id)}>
+                    撤签
+                  </button>
+                ))}
+            </div>
+          </div>
+        )
+      })}
+      <p className="mine-note">
+        满 3 次自动下架是为了保护你:不会有几百个陌生人拿到同一个微信号。想继续,再写一支就好。撤签不返还当日次数。
+      </p>
     </section>
   )
 }
