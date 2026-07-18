@@ -177,6 +177,7 @@ export default function Home() {
             requireGate={requireGate}
             openWall={() => setShowWall(true)}
             openMarket={() => setShowMarket(true)}
+            goPut={() => setTab('put')}
             wall={stats.wall || EMPTY_WALL}
           />
         )}
@@ -309,7 +310,7 @@ function Followup({ deviceId, fu, onClose, onGood, onDone }) {
     <div className="overlay" onClick={onClose}>
       <div className="fu" onClick={(e) => e.stopPropagation()}>
         <span className="fu-badge f-title">月老</span>
-        <h2 className="f-title">第七日 · 月老来问</h2>
+        <h2 className="f-title">月老来问</h2>
         <p className="fu-sub f-hand">红线牵起第 {fu.days} 天,和{fu.nickname}聊得如何?</p>
         {!scamMode ? (
           <>
@@ -693,7 +694,7 @@ function DailySign({ deviceId }) {
 }
 
 // ---- 求签(首页)----
-function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate, openWall, openMarket, wall }) {
+function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate, openWall, openMarket, goPut, wall }) {
   const [shaking, setShaking] = useState(null) // 'male' | 'female'
   const [note, setNote] = useState(null)
   const [toast, setToast] = useState('')
@@ -835,6 +836,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate, openWa
           shaking={shaking === 'male'}
           disabled={outOfDraws || pending}
           onClick={() => draw('male')}
+          onEmptyTap={goPut}
         />
         <Tong
           gender="female"
@@ -845,6 +847,7 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate, openWa
           shaking={shaking === 'female'}
           disabled={outOfDraws || pending}
           onClick={() => draw('female')}
+          onEmptyTap={goPut}
         />
         <i className="slab" aria-hidden="true" />
       </div>
@@ -916,12 +919,12 @@ function DrawTab({ deviceId, stats, loaded, pricing, onDone, requireGate, openWa
   )
 }
 
-function Tong({ gender, label, count, loaded, empty, shaking, disabled, onClick }) {
+function Tong({ gender, label, count, loaded, empty, shaking, disabled, onClick, onEmptyTap }) {
   return (
     <button
       className={`tong ${gender} ${shaking ? 'shaking' : ''} ${empty ? 'empty' : ''}`}
-      onClick={onClick}
-      disabled={disabled || empty}
+      onClick={empty ? onEmptyTap : onClick}
+      disabled={disabled && !empty}
     >
       <span className="sticks" aria-hidden="true">
         <i />
@@ -933,11 +936,11 @@ function Tong({ gender, label, count, loaded, empty, shaking, disabled, onClick 
       <span className="tong-rim" aria-hidden="true" />
       <span className="tong-body" aria-hidden="true" />
       <span className="tong-band f-title">{label}</span>
-      <span className="tong-count">
+      <span className={`tong-count${empty ? ' empty-cta' : ''}`}>
         {!loaded ? (
           <span className="skeleton count-skel" aria-label="清点中" />
         ) : empty ? (
-          '筒空了 · 明日再来'
+          '还空着 · 写一支签让 TA 来请你 ›'
         ) : (
           `${count} 支签在筒里`
         )}

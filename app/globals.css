@@ -598,7 +598,7 @@ button:disabled {
   }
 }
 .tong.empty {
-  opacity: 0.62;
+  opacity: 0.9;
 }
 
 .sticks {
@@ -719,6 +719,10 @@ button:disabled {
 }
 .tong.empty .tong-count {
   color: var(--muted);
+}
+.tong-count.empty-cta {
+  color: var(--zhu);
+  font-weight: 700;
 }
 
 .skip-ritual {
