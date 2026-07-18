@@ -27,6 +27,9 @@ const PENDING_REVEAL_KEY = 'yuelao_pending_reveal'
 const GATE_KEY = 'yuelao_gate_v1'
 const RITUAL_KEY = 'yuelao_ritual_seen'
 
+// 公测反馈方式:填入你的微信号/微信群号,会显示在安全中心;留空则只显示测试期说明
+const BETA_CONTACT = ''
+
 function errMsg(code) {
   return ERRORS[code] || ERRORS.network
 }
@@ -156,6 +159,7 @@ export default function Home() {
         <span className="brand">
           <span className="brand-mark">缘</span>
           月老盲盒
+          <span className="beta-tag">公测</span>
         </span>
         <button className="shield" onClick={() => setShowSafe(true)}>
           安全
@@ -524,6 +528,15 @@ function SafeSheet({ onClose }) {
           </button>
         </div>
         <p className="safe-sub">所有规则和处置,都摆在明面上</p>
+        <div className="safe-card beta">
+          <b className="beta-t">🧪 公测测试中</b>
+          <ul>
+            <li>当前为模拟支付,<b>不会真实扣款</b>,请放心体验完整流程</li>
+            <li>测试期数据可能被重置;填真实微信号会被请中的人看到,介意可先填小号</li>
+            <li>玩得开心或遇到问题,都欢迎告诉月老 —— 你的每条反馈都会被看到</li>
+          </ul>
+          {BETA_CONTACT && <div className="beta-contact">反馈方式:{BETA_CONTACT}</div>}
+        </div>
         <div className="safe-card">
           <b className="danger-t">骗局案例库</b>
           <div className="case">
